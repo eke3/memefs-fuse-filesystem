@@ -34,7 +34,8 @@ dump_block 0 "Backup Superblock"
 dump_block 255 "Main Superblock"
 dump_block 254 "Main FAT"
 dump_block 239 "Backup FAT"
-dump_range 253 14 "Directory Region"
+dump_range 240 14 "Directory Region" // note this has changed 4/22/25
 dump_range 1 18 "Reserved Blocks"
-dump_range 1 220 "User Data Blocks"
+dump_range 19 220 "User Data Blocks" // note this has changed 4/22/25
 
+echo "Done."
