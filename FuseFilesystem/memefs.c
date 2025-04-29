@@ -1,15 +1,17 @@
-// File:    
+// File:    memefs.c
 // Author:  Eric Ekey
 // Date:    04/27/2025
 // Desc:    
 
 #define FUSE_USE_VERSION 35
+
 #include <fuse3/fuse.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <string.h>
 #include <errno.h>
 #include <arpa/inet.h>
+
 #include "include/memefs_structs.h"
 
 #define BLOCK_SIZE 512
@@ -24,8 +26,6 @@
 #define SUPERBLOCK_MAIN_BEGIN 255
 #define USER_DATA_BEGIN 1
 #define USER_DATA_NUM_BLOCKS 220
-
-
 
 static memefs_superblock_t main_superblock;
 static memefs_superblock_t backup_superblock;
@@ -42,18 +42,26 @@ static int memefs_getattr(const char* path, struct stat* stbuf, struct fuse_file
 static int memefs_readdir(const char* path, void* buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info* fi, enum fuse_readdir_flags flags);
 static int memefs_open(const char* path, struct fuse_file_info* fi);
 static int memefs_read(const char* path, char* buf, size_t size, off_t offset, struct fuse_file_info* fi);
+static int memefs_create(const char *path, mode_t mode, struct fuse_file_info *fi);
+static int memefs_utimens(const char *path, const struct timespec ts[2], struct fuse_file_info *fi);
+static int memefs_unlink(const char *path);
 
 // Helper functions for loading data from the filesystem image.
 int load_superblock();
 int load_directory();
 int load_fat();
 int load_user_data();
+void generate_memefs_timestamp(uint8_t bcd_time[8]);
+uint8_t to_bcd(u_int8_t num);
 
 static struct fuse_operations memefs_oper = {
     .getattr = memefs_getattr,
     .readdir = memefs_readdir,
     .open    = memefs_open,
     .read    = memefs_read,
+    .create  = memefs_create,
+    .utimens = memefs_utimens,
+    .unlink  = memefs_unlink,
 };
 
 int load_user_data() {
@@ -144,6 +152,68 @@ int load_directory() {
     return 0;
 }
 
+uint8_t to_bcd(uint8_t num) {
+	if (num > 99) return 0xFF;
+	return ((num / 10) << 4) | (num % 10);
+}
+
+void generate_memefs_timestamp(uint8_t bcd_time[8]) {
+	time_t now = time(NULL);
+	struct tm utc;
+	gmtime_r(&now, &utc); // UTC time (MEMEfs uses UTC, not localtime)
+
+	int full_year = utc.tm_year + 1900;
+	bcd_time[0] = to_bcd(full_year / 100); 	// Century
+	bcd_time[1] = to_bcd(full_year % 100); 	// Year within century
+	bcd_time[2] = to_bcd(utc.tm_mon + 1);  	// Month (0-based in tm)
+	bcd_time[3] = to_bcd(utc.tm_mday);     	// Day
+	bcd_time[4] = to_bcd(utc.tm_hour);     	// Hour
+	bcd_time[5] = to_bcd(utc.tm_min);      	// Minute
+	bcd_time[6] = to_bcd(utc.tm_sec);      	// Second
+	bcd_time[7] = 0x00;                         	// Unused (reserved)
+}
+
+static int memefs_create(const char *path, mode_t mode, struct fuse_file_info *fi) {
+    (void) fi;
+    (void) mode;
+    int i, j;
+
+    for (i = 0; i < MAX_FILE_ENTRIES; i++) {
+        if ((strcmp(directory[i].filename, path + 1) == 0) && (directory[i].type_permissions != 0x0000)) {
+            // File already exists.
+            return -EEXIST;
+        }
+    }
+
+    for (i = 0; i < MAX_FILE_ENTRIES; i++) {
+        if (directory[i].type_permissions == 0x0000) {
+            // Found free file entry in directory.
+            for (j = 0; j < 256; j++) {
+                if (main_fat[j] == 0x0000) {
+                    // Found free FAT entry.
+                    strcpy(directory[i].filename, path + 1);
+                    directory[i].type_permissions = mode; // TODO: should i make sure this sets correct permissions instead of all?
+                    directory[i].start_block = j;
+                    generate_memefs_timestamp(directory[i].bcd_timestamp);
+                    directory[i].uid_owner = 0; // TODO: should these owners be set to current user or root?
+                    directory[i].gid_owner = 0;
+                    directory[i].size = 0;
+                    main_fat[j] = 0xFFFF;
+                    return 0;
+                }
+            }
+        }
+    }
+
+    return -ENOSPC;
+}
+
+static int memefs_utimens(const char* path, const struct timespec tv[2], struct fuse_file_info* fi) {
+    (void) path;
+    (void) tv;
+    (void) fi;
+    return 0;
+}
 
 static int memefs_getattr(const char* path, struct stat* stbuf, struct fuse_file_info* fi) {
     (void) fi;
@@ -278,6 +348,33 @@ static int memefs_read(const char* path, char* buf, size_t size, off_t offset, s
     return bytes_read;
 }
 
+static int memefs_unlink(const char *path) {
+    int i;
+    uint16_t curr_block, next_block;
+
+    //find file in directory
+    for (i = 0, curr_block = 0xFFFF; i < MAX_FILE_ENTRIES; i++) {
+        if ((strcmp(directory[i].filename, path + 1) == 0) && (directory[i].type_permissions != 0x0000)) {
+            // Found file entry.
+            curr_block = directory[i].start_block;
+            break;
+        }
+    }
+
+    if (curr_block == 0xFFFF) {
+        // File not found.
+        return -ENOENT;
+    }
+
+    // Unlink file from FAT.
+    for (next_block = 0xFFFF; curr_block != 0xFFFF; curr_block = next_block) {
+        next_block = main_fat[curr_block];
+        main_fat[curr_block] = 0x0000;
+    }
+    directory[i].type_permissions = 0x0000;
+
+    return 0;
+}
 
 int main(int argc, char* argv[]) {
 	if (argc < 2) {
