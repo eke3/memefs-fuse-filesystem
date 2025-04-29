@@ -5,7 +5,7 @@ MEMEFS     := memefs
 MKMEMEFS   := mkmemefs
 
 # Source files
-MEMEFS_SRC := memefs.c src/environment.c
+MEMEFS_SRC := memefs.c src/loaders.c
 MKMEMEFS_SRC := mkmemefs.c
 
 # Mount and image paths

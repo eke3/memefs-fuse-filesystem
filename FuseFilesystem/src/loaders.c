@@ -1,0 +1,106 @@
+#include "loaders.h"
+
+#include <stdio.h>
+#include <errno.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include "memefs_file_entry.h"
+#include "memefs_superblock.h"
+#include "define.h"
+
+memefs_superblock_t main_superblock;
+memefs_superblock_t backup_superblock;
+memefs_file_entry_t directory[MAX_FILE_ENTRIES];
+uint16_t main_fat[256];
+uint16_t backup_fat[256];
+uint8_t user_data[USER_DATA_NUM_BLOCKS * BLOCK_SIZE];
+int img_fd;
+
+int load_user_data() {
+    off_t data_offset;
+
+    data_offset = (off_t)(USER_DATA_BEGIN * BLOCK_SIZE);
+    if (pread(img_fd, &user_data, USER_DATA_NUM_BLOCKS * BLOCK_SIZE, data_offset) != (USER_DATA_NUM_BLOCKS * BLOCK_SIZE)) {
+        perror("Failed to read user data");
+        return -1;
+    }
+
+    printf("Successfully loaded user data\n");
+    return 0;
+}
+
+int load_fat() {
+    off_t fat_offset;
+    int i;
+    
+    // Load main FAT.
+    fat_offset = (off_t)(FAT_MAIN_BEGIN * BLOCK_SIZE);
+    if (pread(img_fd, &main_fat, BLOCK_SIZE, fat_offset) != sizeof(main_fat)) {
+        perror("Failed to read main FAT");
+        return -1;
+    }
+
+    // Load backup FAT.
+    fat_offset = (off_t)(FAT_BACKUP_BEGIN * BLOCK_SIZE);
+    if (pread(img_fd, &backup_fat, BLOCK_SIZE, fat_offset) != sizeof(backup_fat)) {
+        perror("Failed to read backup FAT");
+        return -1;
+    }
+
+    // Convert FAT entries from network byte order to host byte order.
+    for (i = 0; i < 256; i++) {
+        main_fat[i] = ntohs(main_fat[i]);
+        backup_fat[i] = ntohs(backup_fat[i]);
+    }
+
+    printf("Successfully loaded FATs\n");
+    return 0;
+}
+
+int load_superblock() {
+    off_t superblock_offset;
+    
+    // Load main superblock.
+    superblock_offset = (off_t)(SUPERBLOCK_MAIN_BEGIN * BLOCK_SIZE);
+    if (pread(img_fd, &main_superblock, BLOCK_SIZE, superblock_offset) != sizeof(memefs_superblock_t)) {
+        perror("Failed to read main superblock");
+        return -1;
+    }
+    if (strcmp(main_superblock.signature, SIGNATURE) != 0) {
+        fprintf(stderr, "Invalid filesystem signature from main superblock\n");
+        return -1;
+    }
+
+    // Load backup superblock.
+    superblock_offset = (off_t)(SUPERBLOCK_BACKUP_BEGIN * BLOCK_SIZE);
+    if (pread(img_fd, &backup_superblock, BLOCK_SIZE, superblock_offset) != sizeof(memefs_superblock_t)) {
+        perror("Failed to read backup superblock");
+        return -1;
+    }
+    if (strcmp(backup_superblock.signature, SIGNATURE) != 0) {
+        fprintf(stderr, "Invalid filesystem signature from backup superblock\n");
+        return -1;
+    }
+
+    printf("Successfully loaded superblocks\n");
+    return 0;
+}
+
+int load_directory() {
+    int i;
+    off_t directory_offset;
+    
+    // Load directory entries from bottom (253) to top (240)
+    directory_offset = (off_t)(DIRECTORY_BEGIN * BLOCK_SIZE);
+    for (i = MAX_FILE_ENTRIES - 1; i >= 0; i--) {
+        if (pread(img_fd, &directory[i], FILE_ENTRY_SIZE, directory_offset) != FILE_ENTRY_SIZE) {
+            perror("Failed to read directory entry");
+            return -1;
+        }
+        directory_offset -= (off_t)FILE_ENTRY_SIZE;
+    }
+
+    printf("Successfully loaded directory\n");
+    return 0;
+}
