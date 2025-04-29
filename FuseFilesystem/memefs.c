@@ -22,6 +22,8 @@
 #define SIGNATURE "?MEMEFS++CMSC421"
 #define SUPERBLOCK_BACKUP_BEGIN 0
 #define SUPERBLOCK_MAIN_BEGIN 255
+#define USER_DATA_BEGIN 1
+#define USER_DATA_NUM_BLOCKS 220
 
 
 
@@ -30,6 +32,7 @@ static memefs_superblock_t backup_superblock;
 static memefs_file_entry_t directory[MAX_FILE_ENTRIES];
 static uint16_t main_fat[256];
 static uint16_t backup_fat[256];
+static uint8_t user_data[USER_DATA_NUM_BLOCKS * BLOCK_SIZE];
 
 // File descriptor for the filesystem image.
 static int img_fd;
@@ -40,6 +43,7 @@ static int memefs_readdir(const char* path, void* buf, fuse_fill_dir_t filler, o
 static int memefs_open(const char* path, struct fuse_file_info* fi);
 static int memefs_read(const char* path, char* buf, size_t size, off_t offset, struct fuse_file_info* fi);
 
+// Helper functions for loading data from the filesystem image.
 int load_superblock();
 int load_directory();
 int load_fat();
@@ -52,8 +56,22 @@ static struct fuse_operations memefs_oper = {
     .read    = memefs_read,
 };
 
+int load_user_data() {
+    off_t data_offset;
+
+    data_offset = (off_t)(USER_DATA_BEGIN * BLOCK_SIZE);
+    if (pread(img_fd, &user_data, USER_DATA_NUM_BLOCKS * BLOCK_SIZE, data_offset) != (USER_DATA_NUM_BLOCKS * BLOCK_SIZE)) {
+        perror("Failed to read user data");
+        return -1;
+    }
+
+    printf("Successfully loaded user data\n");
+    return 0;
+}
+
 int load_fat() {
     off_t fat_offset;
+    int i;
     
     // Load main FAT.
     fat_offset = (off_t)(FAT_MAIN_BEGIN * BLOCK_SIZE);
@@ -70,7 +88,7 @@ int load_fat() {
     }
 
     // Convert FAT entries from network byte order to host byte order.
-    for (int i = 0; i < 256; i++) {
+    for (i = 0; i < 256; i++) {
         main_fat[i] = ntohs(main_fat[i]);
         backup_fat[i] = ntohs(backup_fat[i]);
     }
@@ -78,6 +96,7 @@ int load_fat() {
     printf("Successfully loaded FATs\n");
     return 0;
 }
+
 int load_superblock() {
     off_t superblock_offset;
     
@@ -113,7 +132,7 @@ int load_directory() {
     
     // Load directory entries from bottom (253) to top (240)
     directory_offset = (off_t)(DIRECTORY_BEGIN * BLOCK_SIZE);
-    for (i = 0; i < MAX_FILE_ENTRIES; i++) {
+    for (i = MAX_FILE_ENTRIES - 1; i >= 0; i--) {
         if (pread(img_fd, &directory[i], FILE_ENTRY_SIZE, directory_offset) != FILE_ENTRY_SIZE) {
             perror("Failed to read directory entry");
             return -1;
@@ -121,9 +140,6 @@ int load_directory() {
         directory_offset -= (off_t)FILE_ENTRY_SIZE;
     }
 
-    for (int j = 0; j < MAX_FILE_ENTRIES; j++) {
-        printf("[%d] %d\n", directory[j].start_block);
-    }
     printf("Successfully loaded directory\n");
     return 0;
 }
@@ -144,7 +160,7 @@ static int memefs_getattr(const char* path, struct stat* stbuf, struct fuse_file
 
     for (i = 0; i < MAX_FILE_ENTRIES; i++) {
         if (strcmp(directory[i].filename, path + 1) == 0) {
-            // Found file
+            // Found file.
             stbuf->st_mode = (mode_t)(S_IFREG | 0777);
             stbuf->st_nlink = (nlink_t)1;
             stbuf->st_uid = (uid_t)directory[i].uid_owner;
@@ -162,19 +178,23 @@ static int memefs_readdir(const char* path, void* buf, fuse_fill_dir_t filler, o
     (void) offset;
     (void) fi;
     (void) flags;
+    int i;
 
     if (strcmp(path, "/") != 0) {
+        // Not root directory.
         return -ENOENT;
     }
 
     filler(buf, ".", NULL, 0, 0);
     filler(buf, "..", NULL, 0, 0);
+    // Add fake file for testing.
     filler(buf, "bullshitfile", NULL, 0, 0);
 
-    for (int i = 0; i < MAX_FILE_ENTRIES; i++) {
+    for (i = 0; i < MAX_FILE_ENTRIES; i++) {
         if (directory[i].type_permissions != 0x0000
             && strlen(directory[i].filename) > 0
             && directory[i].filename[0] != '\0') {
+            // Found file.
             filler(buf, directory[i].filename, NULL, 0, 0);
         }
     }
@@ -186,14 +206,15 @@ static int memefs_open(const char* path, struct fuse_file_info* fi) {
     (void) fi;
     int i;
 
-    for (i=0; i < MAX_FILE_ENTRIES; i++) {
+    for (i = 0; i < MAX_FILE_ENTRIES; i++) {
         if ((strcmp(directory[i].filename, path + 1) == 0) && (directory[i].type_permissions != 0x0000)) {
             // Found file entry.
             return 0;
         }
     }
-    // check for root dir
+    
     if (strcmp(path, "/") == 0) {
+        // Found root directory.
         return 0;
     }
 
@@ -201,12 +222,46 @@ static int memefs_open(const char* path, struct fuse_file_info* fi) {
 }
 
 static int memefs_read(const char* path, char* buf, size_t size, off_t offset, struct fuse_file_info* fi) {
-    (void) path;
-    (void) buf;
     (void) size;
     (void) offset;
     (void) fi;
+    int i, curr_block, done;
+    uint32_t file_size, bytes_read;
+    off_t buffer_offset;
+
     // locate file in directory
+    for (i = 0, curr_block = 0xFFFF; i < MAX_FILE_ENTRIES; i++) {
+        if ((strcmp(directory[i].filename, path + 1) == 0) && (directory[i].type_permissions != 0x0000)) {
+            // Found file entry.
+            curr_block = directory[i].start_block;
+            file_size = directory[i].size;
+            break;
+        }
+    }
+
+    if (curr_block == 0xFFFF) {
+        // File not found.
+        return -ENOENT;
+    }
+
+    // read file data
+    for (done = 0, buffer_offset = 0, bytes_read = 0; !done; curr_block = main_fat[curr_block]) {
+        // for current, loop one byte at a time copying block to buffer
+        for (i = 0; i < BLOCK_SIZE; i++) {
+            if (bytes_read == file_size) {
+                done = 1;
+                break;
+            }
+            memcpy(buf + buffer_offset, &user_data[curr_block * BLOCK_SIZE], 1);
+            buffer_offset++;
+            bytes_read++;
+        }
+
+        // check if reached end of file
+        if (main_fat[curr_block] == 0xFFFF) {
+            done = 1;
+        }
+    }
 
     // points to start block in fat 
 
@@ -220,7 +275,7 @@ static int memefs_read(const char* path, char* buf, size_t size, off_t offset, s
 
     // return number of bytes in the buffer 
 
-    return 0;
+    return bytes_read;
 }
 
 
@@ -244,8 +299,8 @@ int main(int argc, char* argv[]) {
     	return 1;
 	}
 
-    if (load_fat() < 0) {
-        fprintf(stderr, "Failed to load FATs\n");
+    if (load_fat() < 0 || load_user_data() < 0) {
+        fprintf(stderr, "Failed to load FATs or user data\n");
         close(img_fd);
         return 1;
     }
