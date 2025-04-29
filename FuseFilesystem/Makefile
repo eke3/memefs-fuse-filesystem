@@ -5,7 +5,7 @@ MEMEFS     := memefs
 MKMEMEFS   := mkmemefs
 
 # Source files
-MEMEFS_SRC := memefs.c
+MEMEFS_SRC := memefs.c src/environment.c
 MKMEMEFS_SRC := mkmemefs.c
 
 # Mount and image paths
@@ -25,7 +25,7 @@ all: build
 build: build_memefs build_mkmemefs
 
 build_memefs: $(MEMEFS_SRC)
-	$(CC) $(CFLAGS) -o $(MEMEFS) $(MEMEFS_SRC) $(LDFLAGS)
+	$(CC) $(CFLAGS) -Iinclude -o $(MEMEFS) $(MEMEFS_SRC) $(LDFLAGS)
 
 build_mkmemefs: $(MKMEMEFS_SRC)
 	$(CC) $(CFLAGS) -o $(MKMEMEFS) $(MKMEMEFS_SRC)

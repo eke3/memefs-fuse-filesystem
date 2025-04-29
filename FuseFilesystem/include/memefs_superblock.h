@@ -1,19 +1,7 @@
-#ifndef MEMEFS_STRUCTS_H
-#define MEMEFS_STRUCTS_H
+#ifndef MEMEFS_SUPERBLOCK_H
+#define MEMEFS_SUPERBLOCK_H
 
 #include <stdint.h>
-
-// Structure representing a file entry in the directory.
-typedef struct memefs_file_entry {
-    uint16_t type_permissions; // File type and permissions
-    uint16_t start_block;      // Starting block number
-    char filename[11];         // Filename
-    uint8_t unused;            // Unused byte
-    uint8_t bcd_timestamp[8];  // Timestamp in BCD format
-    uint32_t size;             // File size
-    uint16_t uid_owner;        // User ID of owner
-    uint16_t gid_owner;        // Group ID of owner
-} __attribute__((packed)) memefs_file_entry_t;
 
 // Structure representing the superblock metadata for the filesystem.
 typedef struct memefs_superblock {
@@ -34,4 +22,4 @@ typedef struct memefs_superblock {
     uint8_t unused[448];       // Unused space for alignment
 } __attribute__((packed)) memefs_superblock_t;
 
-#endif // MEMEFS_STRUCTS_H
+#endif // MEMEFS_SUPERBLOCK_H

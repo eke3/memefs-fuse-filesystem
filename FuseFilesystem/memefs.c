@@ -3,29 +3,15 @@
 // Date:    04/27/2025
 // Desc:    
 
-#define FUSE_USE_VERSION 35
-
-#include <fuse3/fuse.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <string.h>
 #include <errno.h>
 #include <arpa/inet.h>
 
-#include "include/memefs_structs.h"
-
-#define BLOCK_SIZE 512
-#define DIRECTORY_BEGIN 253
-#define DIRECTORY_NUM_BLOCKS 14
-#define FAT_BACKUP_BEGIN 239
-#define FAT_MAIN_BEGIN 254
-#define FILE_ENTRY_SIZE 32
-#define MAX_FILE_ENTRIES 224
-#define SIGNATURE "?MEMEFS++CMSC421"
-#define SUPERBLOCK_BACKUP_BEGIN 0
-#define SUPERBLOCK_MAIN_BEGIN 255
-#define USER_DATA_BEGIN 1
-#define USER_DATA_NUM_BLOCKS 220
+#include "memefs_file_entry.h"
+#include "memefs_superblock.h"
+#include "define.h"
 
 static memefs_superblock_t main_superblock;
 static memefs_superblock_t backup_superblock;
