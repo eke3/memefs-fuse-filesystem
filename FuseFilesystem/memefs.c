@@ -29,6 +29,7 @@ static int memefs_read(const char* path, char* buf, size_t size, off_t offset, s
 static int memefs_create(const char *path, mode_t mode, struct fuse_file_info *fi);
 static int memefs_utimens(const char *path, const struct timespec ts[2], struct fuse_file_info *fi);
 static int memefs_unlink(const char *path);
+static int memefs_write(const char* path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi);
 
 // Helper functions for loading data from the filesystem image.
 extern int load_superblock();
@@ -48,6 +49,7 @@ static struct fuse_operations memefs_oper = {
     .create  = memefs_create,
     .utimens = memefs_utimens,
     .unlink  = memefs_unlink,
+    .write = memefs_write,
 };
 
 static uint8_t to_bcd(uint8_t num) {
@@ -271,6 +273,15 @@ static int memefs_unlink(const char *path) {
     }
     directory[i].type_permissions = 0x0000;
 
+    return 0;
+}
+
+static int memefs_write(const char* path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
+    (void) path;
+    (void) buf;
+    (void) size;
+    (void) offset;
+    (void) fi;
     return 0;
 }
 
