@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <errno.h>
+#include <arpa/inet.h>
 #include "include/memefs_structs.h"
 
 #define BLOCK_SIZE 512
@@ -52,34 +53,30 @@ static struct fuse_operations memefs_oper = {
 };
 
 int load_fat() {
-    /* 
+    off_t fat_offset;
     
-    TODO: Investigate funky numbers here.
+    // Load main FAT.
+    fat_offset = (off_t)(FAT_MAIN_BEGIN * BLOCK_SIZE);
+    if (pread(img_fd, &main_fat, BLOCK_SIZE, fat_offset) != sizeof(main_fat)) {
+        perror("Failed to read main FAT");
+        return -1;
+    }
 
-    */
-    // off_t fat_offset;
-    
-    // // Load main FAT.
-    // fat_offset = (off_t)(FAT_MAIN_BEGIN * BLOCK_SIZE);
-    // if (pread(img_fd, &main_fat, BLOCK_SIZE, fat_offset) != sizeof(main_fat)) {
-    //     perror("Failed to read main FAT");
-    //     return -1;
-    // }
+    // Load backup FAT.
+    fat_offset = (off_t)(FAT_BACKUP_BEGIN * BLOCK_SIZE);
+    if (pread(img_fd, &backup_fat, BLOCK_SIZE, fat_offset) != sizeof(backup_fat)) {
+        perror("Failed to read backup FAT");
+        return -1;
+    }
 
-    // // Load backup FAT.
-    // fat_offset = (off_t)(FAT_BACKUP_BEGIN * BLOCK_SIZE);
-    // if (pread(img_fd, &backup_fat, BLOCK_SIZE, fat_offset) != sizeof(backup_fat)) {
-    //     perror("Failed to read backup FAT");
-    //     return -1;
-    // }
+    // Convert FAT entries from network byte order to host byte order.
+    for (int i = 0; i < 256; i++) {
+        main_fat[i] = ntohs(main_fat[i]);
+        backup_fat[i] = ntohs(backup_fat[i]);
+    }
 
-    // printf("First values of the main FAT:\n");
-    // for (int i = 0; i < 256; i++) {
-    //     printf("%d: %d\n", i, main_fat[i]);
-    // }
-
-    // printf("Successfully loaded FATs\n");
-    // return 0;
+    printf("Successfully loaded FATs\n");
+    return 0;
 }
 int load_superblock() {
     off_t superblock_offset;
@@ -123,6 +120,10 @@ int load_directory() {
         }
         directory_offset -= (off_t)FILE_ENTRY_SIZE;
     }
+
+    for (int j = 0; j < MAX_FILE_ENTRIES; j++) {
+        printf("[%d] %d\n", directory[j].start_block);
+    }
     printf("Successfully loaded directory\n");
     return 0;
 }
@@ -133,14 +134,19 @@ static int memefs_getattr(const char* path, struct stat* stbuf, struct fuse_file
     int i;
 
     memset(stbuf, 0, sizeof(struct stat));
+
+    if (strcmp(path, "/") == 0) {
+        // Root directory or "." or ".."
+        stbuf->st_mode = (mode_t)(S_IFDIR | 0755);
+        stbuf->st_nlink = (nlink_t)2;
+        return 0;
+    }
+
     for (i = 0; i < MAX_FILE_ENTRIES; i++) {
-        if (strcmp(directory[i].filename, path) == 0) {
-            // Found file entry.
-            /*
-
-            TODO: set stbuf->st_mode
-
-            */
+        if (strcmp(directory[i].filename, path + 1) == 0) {
+            // Found file
+            stbuf->st_mode = (mode_t)(S_IFREG | 0777);
+            stbuf->st_nlink = (nlink_t)1;
             stbuf->st_uid = (uid_t)directory[i].uid_owner;
             stbuf->st_gid = (gid_t)directory[i].gid_owner;
             stbuf->st_size = (off_t)directory[i].size;
@@ -148,43 +154,61 @@ static int memefs_getattr(const char* path, struct stat* stbuf, struct fuse_file
             return 0;
         }
     }
-    return -1;
+
+    return -ENOENT;
 }
 
 static int memefs_readdir(const char* path, void* buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info* fi, enum fuse_readdir_flags flags) {
-    (void) path; 
     (void) offset;
     (void) fi;
     (void) flags;
-    int i ;
 
-    for (i = 0; i < MAX_FILE_ENTRIES; i++) {
-        if (directory[i].type_permissions != 0x0000) {
-            // Found file entry.
+    if (strcmp(path, "/") != 0) {
+        return -ENOENT;
+    }
+
+    filler(buf, ".", NULL, 0, 0);
+    filler(buf, "..", NULL, 0, 0);
+    filler(buf, "bullshitfile", NULL, 0, 0);
+
+    for (int i = 0; i < MAX_FILE_ENTRIES; i++) {
+        if (directory[i].type_permissions != 0x0000
+            && strlen(directory[i].filename) > 0
+            && directory[i].filename[0] != '\0') {
             filler(buf, directory[i].filename, NULL, 0, 0);
         }
     }
+
     return 0;
 }
 
 static int memefs_open(const char* path, struct fuse_file_info* fi) {
+    (void) fi;
     int i;
 
     for (i=0; i < MAX_FILE_ENTRIES; i++) {
-        if ((strcmp(directory[i].filename, path) == 0) && (directory[i].type_permissions != 0x0000)) {
+        if ((strcmp(directory[i].filename, path + 1) == 0) && (directory[i].type_permissions != 0x0000)) {
             // Found file entry.
-            fi->fh = i;
             return 0;
         }
     }
+    // check for root dir
+    if (strcmp(path, "/") == 0) {
+        return 0;
+    }
+
     return -ENOENT;
 }
 
 static int memefs_read(const char* path, char* buf, size_t size, off_t offset, struct fuse_file_info* fi) {
+    (void) path;
+    (void) buf;
+    (void) size;
+    (void) offset;
+    (void) fi;
+    // locate file in directory
 
-    // locate file in fat table?
-
-    // get start block
+    // points to start block in fat 
 
     // add data at start block to buffer
 
@@ -192,9 +216,9 @@ static int memefs_read(const char* path, char* buf, size_t size, off_t offset, s
 
     // append data to buffer
 
-    // continue
+    // continue until 0xffff
 
-    // return number of bytes in the buffer
+    // return number of bytes in the buffer 
 
     return 0;
 }
