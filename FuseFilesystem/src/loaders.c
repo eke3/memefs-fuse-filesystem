@@ -12,10 +12,28 @@
 memefs_superblock_t main_superblock;
 memefs_superblock_t backup_superblock;
 memefs_file_entry_t directory[MAX_FILE_ENTRIES];
-uint16_t main_fat[256];
-uint16_t backup_fat[256];
+uint16_t main_fat[MAX_FAT_ENTRIES];
+uint16_t backup_fat[MAX_FAT_ENTRIES];
 uint8_t user_data[USER_DATA_NUM_BLOCKS * BLOCK_SIZE];
 int img_fd;
+
+int load_full_image() {
+	// HINT: Define helper functions: load_superblock and load_directory
+	if (load_superblock() < 0 || load_directory() < 0) {
+    	fprintf(stderr, "Failed to load superblock or directory\n");
+    	close(img_fd);
+    	return 1;
+	}
+    if (load_fat() < 0 || load_user_data() < 0) {
+        fprintf(stderr, "Failed to load FATs or user data\n");
+        close(img_fd);
+        return 1;
+    }
+
+    main_superblock.cleanly_unmounted = 0xFF;
+    backup_superblock.cleanly_unmounted = 0xFF;
+    return 0;
+}
 
 int load_user_data() {
     off_t data_offset;
@@ -49,7 +67,7 @@ int load_fat() {
     }
 
     // Convert FAT entries from network byte order to host byte order.
-    for (i = 0; i < 256; i++) {
+    for (i = 0; i < MAX_FAT_ENTRIES; i++) {
         main_fat[i] = ntohs(main_fat[i]);
         backup_fat[i] = ntohs(backup_fat[i]);
     }
@@ -83,6 +101,12 @@ int load_superblock() {
         return -1;
     }
 
+    memset(main_superblock.reserved1, 0x00, sizeof(main_superblock.reserved1));
+    memset(backup_superblock.reserved1, 0x00, sizeof(backup_superblock.reserved1));
+    memset(main_superblock.unused, 0x00, sizeof(main_superblock.unused));
+    memset(backup_superblock.unused, 0x00, sizeof(backup_superblock.unused));
+    main_superblock.cleanly_unmounted = 0x00;
+    backup_superblock.cleanly_unmounted = 0x00;
     printf("Successfully loaded superblocks\n");
     return 0;
 }

@@ -7,7 +7,7 @@
 typedef struct memefs_superblock {
     char signature[16];        // Filesystem signature
     uint8_t cleanly_unmounted; // Flag for unmounted state
-    uint8_t reseerved1[3];     // Reserved bytes
+    uint8_t reserved1[3];     // Reserved bytes
     uint32_t fs_version;       // Filesystem version
     uint8_t fs_ctime[8];       // Creation timestamp in BCD format
     uint16_t main_fat;         // Starting block for main FAT

@@ -16,8 +16,14 @@
 extern memefs_superblock_t main_superblock;
 extern memefs_superblock_t backup_superblock;
 extern memefs_file_entry_t directory[MAX_FILE_ENTRIES];
-extern uint16_t main_fat[256];
-extern uint16_t backup_fat[256];
+extern uint16_t main_fat[MAX_FAT_ENTRIES];
+
+/* 
+
+    when do we use backup fat? no indicator for if its corrupted
+
+*/
+extern uint16_t backup_fat[MAX_FAT_ENTRIES];
 extern uint8_t user_data[USER_DATA_NUM_BLOCKS * BLOCK_SIZE];
 extern int img_fd;
 
@@ -32,14 +38,11 @@ static int memefs_unlink(const char *path);
 static int memefs_write(const char* path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi);
 
 // Helper functions for loading data from the filesystem image.
-extern int load_superblock();
-extern int load_directory();
-extern int load_fat();
-extern int load_user_data();
+extern int load_full_image();
 
 // Helper functions for fuse operations
 static void generate_memefs_timestamp(uint8_t bcd_time[8]);
-static uint8_t to_bcd(u_int8_t num);
+static uint8_t to_bcd(uint8_t num);
 
 static struct fuse_operations memefs_oper = {
     .getattr = memefs_getattr,
@@ -78,6 +81,11 @@ static int memefs_create(const char *path, mode_t mode, struct fuse_file_info *f
     (void) mode;
     int i, j;
 
+    if (strlen(path + 1) > MAX_FILENAME_LENGTH) {
+        // File name too long.
+        return -ENAMETOOLONG;
+    }
+
     for (i = 0; i < MAX_FILE_ENTRIES; i++) {
         if ((strcmp(directory[i].filename, path + 1) == 0) && (directory[i].type_permissions != 0x0000)) {
             // File already exists.
@@ -88,17 +96,19 @@ static int memefs_create(const char *path, mode_t mode, struct fuse_file_info *f
     for (i = 0; i < MAX_FILE_ENTRIES; i++) {
         if (directory[i].type_permissions == 0x0000) {
             // Found free file entry in directory.
-            for (j = 0; j < 256; j++) {
+            for (j = 0; j < MAX_FAT_ENTRIES; j++) {
                 if (main_fat[j] == 0x0000) {
                     // Found free FAT entry.
                     strcpy(directory[i].filename, path + 1);
                     directory[i].type_permissions = mode; // TODO: should i make sure this sets correct permissions instead of all?
                     directory[i].start_block = j;
+                    directory[i].unused = 0;
                     generate_memefs_timestamp(directory[i].bcd_timestamp);
                     directory[i].uid_owner = 0; // TODO: should these owners be set to current user or root?
                     directory[i].gid_owner = 0;
                     directory[i].size = 0;
                     main_fat[j] = 0xFFFF;
+                    backup_fat[j] = 0xFFFF;
                     return 0;
                 }
             }
@@ -157,9 +167,6 @@ static int memefs_readdir(const char* path, void* buf, fuse_fill_dir_t filler, o
 
     filler(buf, ".", NULL, 0, 0);
     filler(buf, "..", NULL, 0, 0);
-    // Add fake file for testing.
-    filler(buf, "bullshitfile", NULL, 0, 0);
-
     for (i = 0; i < MAX_FILE_ENTRIES; i++) {
         if (directory[i].type_permissions != 0x0000
             && strlen(directory[i].filename) > 0
@@ -252,7 +259,7 @@ static int memefs_unlink(const char *path) {
     int i;
     uint16_t curr_block, next_block;
 
-    //find file in directory
+    // Find file in directory.
     for (i = 0, curr_block = 0xFFFF; i < MAX_FILE_ENTRIES; i++) {
         if ((strcmp(directory[i].filename, path + 1) == 0) && (directory[i].type_permissions != 0x0000)) {
             // Found file entry.
@@ -270,6 +277,7 @@ static int memefs_unlink(const char *path) {
     for (next_block = 0xFFFF; curr_block != 0xFFFF; curr_block = next_block) {
         next_block = main_fat[curr_block];
         main_fat[curr_block] = 0x0000;
+        backup_fat[curr_block] = 0x0000;
     }
     directory[i].type_permissions = 0x0000;
 
@@ -282,8 +290,44 @@ static int memefs_write(const char* path, const char *buf, size_t size, off_t of
     (void) size;
     (void) offset;
     (void) fi;
+    int i;
+
+    for (i = 0; i < MAX_FILE_ENTRIES; i++) {
+        if ((strcmp(directory[i].filename, path + 1) == 0) && (directory[i].type_permissions != 0x0000)) {
+            // Found file.
+
+        }
+    }
+
+    
+
     return 0;
+    
+    /*
+    
+    NOTE: i think some of this is for truncate
+    what is truncate :(
+
+
+    find file entry
+
+    use fat to get to file data blocks
+        consider offset. for every 512, jump to next fat reference
+        then look at that data block and navigate to offset based on remainder
+        start writing. if you hit the end of the block, search for an open data block and continue writing there
+            add new data block to fat chain
+        track bytes written. add to size? or recount?
+
+    write data at offset, maybe extend file
+
+    allocate new blocks if needed, track by adding to fat
+
+    update size and timestamp in directory entry
+    
+    */
 }
+
+
 
 int main(int argc, char* argv[]) {
 	if (argc < 2) {
@@ -298,19 +342,6 @@ int main(int argc, char* argv[]) {
     	return 1;
 	}
 
-	// HINT: Define helper functions: load_superblock and load_directory
-	if (load_superblock() < 0 || load_directory() < 0) {
-    	fprintf(stderr, "Failed to load superblock or directory\n");
-    	close(img_fd);
-    	return 1;
-	}
-
-    if (load_fat() < 0 || load_user_data() < 0) {
-        fprintf(stderr, "Failed to load FATs or user data\n");
-        close(img_fd);
-        return 1;
-    }
-
-	return fuse_main(argc - 1, argv + 1, &memefs_oper, NULL);
+	return (load_full_image() ? 1 : fuse_main(argc - 1, argv + 1, &memefs_oper, NULL));
 }
 
