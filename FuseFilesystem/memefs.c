@@ -8,10 +8,12 @@
 #include <string.h>
 #include <errno.h>
 #include <arpa/inet.h>
+#include <math.h>
 
 #include "memefs_file_entry.h"
 #include "memefs_superblock.h"
 #include "define.h"
+#include "utils.h"
 
 extern memefs_superblock_t main_superblock;
 extern memefs_superblock_t backup_superblock;
@@ -20,7 +22,7 @@ extern uint16_t main_fat[MAX_FAT_ENTRIES];
 
 /* 
 
-    when do we use backup fat? no indicator for if its corrupted
+    NOTE: when do we use backup fat? theres no indicator for if its corrupted
 
 */
 extern uint16_t backup_fat[MAX_FAT_ENTRIES];
@@ -36,13 +38,15 @@ static int memefs_create(const char *path, mode_t mode, struct fuse_file_info *f
 static int memefs_utimens(const char *path, const struct timespec ts[2], struct fuse_file_info *fi);
 static int memefs_unlink(const char *path);
 static int memefs_write(const char* path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi);
+static int memefs_truncate(const char* path, off_t new_size, struct fuse_file_info* fi);
+static void memefs_destroy(void* private_data);
 
-// Helper functions for loading data from the filesystem image.
-extern int load_full_image();
+// Helper functions for loading and unloading data from the filesystem image.
+extern int load_image();
+extern int unload_image();
 
-// Helper functions for fuse operations
-static void generate_memefs_timestamp(uint8_t bcd_time[8]);
-static uint8_t to_bcd(uint8_t num);
+
+// static int is_illegal_filename(char* filename);
 
 static struct fuse_operations memefs_oper = {
     .getattr = memefs_getattr,
@@ -52,39 +56,39 @@ static struct fuse_operations memefs_oper = {
     .create  = memefs_create,
     .utimens = memefs_utimens,
     .unlink  = memefs_unlink,
-    .write = memefs_write,
+    // .write = memefs_write,
+    .truncate = memefs_truncate,
+    // .destroy = memefs_destroy,
 };
 
-static uint8_t to_bcd(uint8_t num) {
-	if (num > 99) return 0xFF;
-	return ((num / 10) << 4) | (num % 10);
-}
+// static int scrub_path(char* path) {
+//     // remove leading 
 
-static void generate_memefs_timestamp(uint8_t bcd_time[8]) {
-	time_t now = time(NULL);
-	struct tm utc;
-	gmtime_r(&now, &utc); // UTC time (MEMEfs uses UTC, not localtime)
+//     return 0;
+// }
 
-	int full_year = utc.tm_year + 1900;
-	bcd_time[0] = to_bcd(full_year / 100); 	// Century
-	bcd_time[1] = to_bcd(full_year % 100); 	// Year within century
-	bcd_time[2] = to_bcd(utc.tm_mon + 1);  	// Month (0-based in tm)
-	bcd_time[3] = to_bcd(utc.tm_mday);     	// Day
-	bcd_time[4] = to_bcd(utc.tm_hour);     	// Hour
-	bcd_time[5] = to_bcd(utc.tm_min);      	// Minute
-	bcd_time[6] = to_bcd(utc.tm_sec);      	// Second
-	bcd_time[7] = 0x00;                         	// Unused (reserved)
-}
+// static int is_illegal_filename(char* filename) {
+//     // not alnum OR is space OR 
+//     return 0;
+// }
+
 
 static int memefs_create(const char *path, mode_t mode, struct fuse_file_info *fi) {
     (void) fi;
     (void) mode;
     int i, j;
 
-    if (strlen(path + 1) > MAX_FILENAME_LENGTH) {
-        // File name too long.
-        return -ENAMETOOLONG;
-    }
+    // TODO: Don't allow creating files with illegal characters
+
+    /*
+    
+    Maybe delegate this check to another function
+    
+    */
+    // if (strlen(path + 1) > MAX_FILENAME_LENGTH) {
+    //     // File name too long.
+    //     return -ENAMETOOLONG;
+    // }
 
     for (i = 0; i < MAX_FILE_ENTRIES; i++) {
         if ((strcmp(directory[i].filename, path + 1) == 0) && (directory[i].type_permissions != 0x0000)) {
@@ -147,6 +151,7 @@ static int memefs_getattr(const char* path, struct stat* stbuf, struct fuse_file
             stbuf->st_gid = (gid_t)directory[i].gid_owner;
             stbuf->st_size = (off_t)directory[i].size;
             stbuf->st_mtime = (time_t)directory[i].bcd_timestamp;
+            stbuf->st_blocks = (blkcnt_t)((directory[i].size + 511) / 512);
             return 0;
         }
     }
@@ -285,7 +290,6 @@ static int memefs_unlink(const char *path) {
 }
 
 static int memefs_write(const char* path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
-    (void) path;
     (void) buf;
     (void) size;
     (void) offset;
@@ -327,7 +331,114 @@ static int memefs_write(const char* path, const char *buf, size_t size, off_t of
     */
 }
 
+static int memefs_truncate(const char* path, off_t new_size, struct fuse_file_info* fi) {
+    (void) path;
+    (void) new_size;
+    (void) fi;
+    int g, h, i, j, k, curr_block, next_block, found;
+    int blocks_in_use, blocks_needed, free_fat_blocks;
 
+    if (strcmp(path, "/") == 0) {
+        // Can't truncate a directory.
+        return -EISDIR;
+    }
+
+    // Find file in directory.
+    for (i = 0, h = 0, found = 0; i < MAX_FILE_ENTRIES && !found; i++) {
+        if ((strcmp(directory[i].filename, path + 1) == 0) && directory[i].type_permissions != 0x0000) {
+            // Found file.
+            found = 1;
+            h = i;
+            break;
+        }
+    }
+
+    if (!found) {
+        // File not found.
+        return -ENOENT;
+    }
+
+    blocks_in_use = (size_t)ceil((double)directory[i].size / (double)BLOCK_SIZE);
+    blocks_needed = (size_t)ceil((double)new_size / (double)BLOCK_SIZE);
+    if (blocks_needed == 0) {
+        // Even empty files take up a FAT block.
+        blocks_needed = 1;
+    }
+
+    // Truncate file to smaller size.
+    if (blocks_needed < blocks_in_use) {
+        // Traverse FAT Chain
+        for (g = 1, curr_block = directory[h].start_block; g <= blocks_in_use; g++, curr_block = next_block) {
+            next_block = main_fat[curr_block];
+            if (g == blocks_needed) {
+                // New end of chain block.
+                main_fat[curr_block] = 0xFFFF;
+                backup_fat[curr_block] = 0xFFFF;
+            } else if (g > blocks_needed) {
+                // Blocks after new end of chain.
+                main_fat[curr_block] = 0x0000;
+                backup_fat[curr_block] = 0x0000;
+            }
+        }
+    }
+
+    // Truncate file to larger size.
+    if (blocks_needed > blocks_in_use) {
+        // Count free FAT blocks.
+        for (k = 0, free_fat_blocks = 0; k < MAX_FAT_ENTRIES; k++) {
+            if (main_fat[k] == 0x0000) {
+                free_fat_blocks++;
+            }
+        }
+        
+        // Check if there are enough free FAT blocks.
+        if ((blocks_needed - blocks_in_use) > free_fat_blocks) {
+            // Not enough free FAT blocks.
+            return -ENOSPC;
+        }
+
+        // Traverse to last block in use
+        for (j = 0, curr_block = directory[h].start_block; j < blocks_in_use; j++) {
+            next_block = main_fat[curr_block];
+            curr_block = next_block;
+        }
+
+        // Find free blocks in the FAT to extend into.
+        while (j < blocks_needed) {
+            for (i = 0; i < MAX_FAT_ENTRIES; i++) {
+                if (main_fat[i] == 0x0000) {
+                    // Found free block, make use of it.
+                    main_fat[curr_block] = i;
+                    backup_fat[curr_block] = i;
+                    main_fat[i] = 0xFFFF;
+                    backup_fat[i] = 0xFFFF;
+                    curr_block = i;
+                    j++;
+                    break;
+                }
+            }
+        }
+    }
+
+    // Update file size.
+    directory[h].size = (uint32_t)new_size;
+    return 0;
+}
+
+
+static void memefs_destroy(void* private_data) {
+    (void) private_data;
+
+    if (unload_image() != 0) {
+        fprintf(stderr, "Failed to copy filesystem to image\n");
+    }
+
+    // Close the image file descriptor
+    if (img_fd >= 0) {
+        close(img_fd);
+        img_fd = -1;
+    }
+}
 
 int main(int argc, char* argv[]) {
 	if (argc < 2) {
@@ -342,6 +453,6 @@ int main(int argc, char* argv[]) {
     	return 1;
 	}
 
-	return (load_full_image() ? 1 : fuse_main(argc - 1, argv + 1, &memefs_oper, NULL));
+	return (load_image() ? 1 : fuse_main(argc - 1, argv + 1, &memefs_oper, NULL));
 }
 

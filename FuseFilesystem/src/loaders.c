@@ -17,7 +17,7 @@ uint16_t backup_fat[MAX_FAT_ENTRIES];
 uint8_t user_data[USER_DATA_NUM_BLOCKS * BLOCK_SIZE];
 int img_fd;
 
-int load_full_image() {
+int load_image() {
 	// HINT: Define helper functions: load_superblock and load_directory
 	if (load_superblock() < 0 || load_directory() < 0) {
     	fprintf(stderr, "Failed to load superblock or directory\n");
@@ -33,6 +33,16 @@ int load_full_image() {
     main_superblock.cleanly_unmounted = 0xFF;
     backup_superblock.cleanly_unmounted = 0xFF;
     return 0;
+}
+
+int unload_image() {
+
+    /*
+    
+    TODO: Implement this. Also call it every time you modify data.
+    
+    */
+
 }
 
 int load_user_data() {

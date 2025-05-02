@@ -2,7 +2,8 @@
 #define LOADERS_H
 
 // Loads entire filesystem image
-int load_full_image();
+int load_image();
+int unload_image();
 
 // Helper functions for loading data from the filesystem image.
 int load_superblock();

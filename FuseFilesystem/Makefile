@@ -5,7 +5,7 @@ MEMEFS     := memefs
 MKMEMEFS   := mkmemefs
 
 # Source files
-MEMEFS_SRC := memefs.c src/loaders.c
+MEMEFS_SRC := memefs.c src/*.c
 MKMEMEFS_SRC := mkmemefs.c
 
 # Mount and image paths
@@ -16,7 +16,7 @@ VOLUME_NAME := MYVOLUME
 # Compiler and flags
 CC := gcc
 CFLAGS := -Wall -Wextra -D_FILE_OFFSET_BITS=64
-LDFLAGS := -lfuse3
+LDFLAGS := -lfuse3 -lm
 
 .PHONY: all build run debug clean create_dir unmount_memefs mount_memefs create_memefs_img
 
