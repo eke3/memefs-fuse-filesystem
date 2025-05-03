@@ -16,7 +16,7 @@ VOLUME_NAME := MYVOLUME
 # Compiler and flags
 CC := gcc
 CFLAGS := -Wall -Wextra -D_FILE_OFFSET_BITS=64
-LDFLAGS := -lfuse3 -lm
+LDFLAGS := -lfuse3
 
 .PHONY: all build run debug clean create_dir unmount_memefs mount_memefs create_memefs_img
 

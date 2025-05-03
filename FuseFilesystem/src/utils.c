@@ -2,6 +2,7 @@
 
 #include <time.h>
 #include <string.h>
+#include <errno.h>
 
 #include "define.h"
 
@@ -26,52 +27,52 @@ void generate_memefs_timestamp(uint8_t bcd_time[8]) {
 	bcd_time[7] = 0x00;                         	// Unused (reserved)
 }
 
-void format_filename(char* path, char formatted_filename[11]) {
-	char* dot = strchr(path, '.');
+double myCeil(double num) {
+    int whole_num;
 
-    // Initialize formatted_filename to all '\0'
-    memset(formatted_filename, '\0', 11);
+    whole_num = (int)num;
+    if (num - whole_num > 0) {
+        // Number is greater than the whole part.
+        return whole_num + 1;
+    }
+    return whole_num;
+}
+
+int scrub_path(const char* path, char* clean_path) {
+    memset(clean_path, '/', 1);
+    memset(clean_path + 1, '\0', MAX_FILENAME_LENGTH);
 
     if (strcmp(path, "/") == 0) {
         // Root directory.
-        return;
+        return 0;
     }
 
-    if (strlen(path + 1) > (MAX_FILENAME_LENGTH + strlen('.'))) {
+    char* last_dot = strrchr(path, '.');
+    if (last_dot == NULL) {
+        // No file extension.
+        if (strlen(path + 1) > MAX_FILENAME_LENGTH) {
+            // File name too long.
+            return -ENAMETOOLONG;
+        }
+        memcpy(clean_path + 1, path + 1, strlen(path + 1));
+        return 0;
+    }
+
+    if (strlen(last_dot + 1) > 3) {
+        // File extension too long.
+        return -ENAMETOOLONG;
+    }
+
+    if ((strlen(path) - strlen(last_dot)) > MAX_FILENAME_LENGTH - 4) {
         // File name too long.
-        path = NULL;
-        return;
-    }
-    
-	if (dot == NULL) {
-        // No dot. Not too long. Copy whole filename
-		strncpy(formatted_filename, path + 1, strlen(path + 1));
-	} else {
-        // Has dot. Not too long. Parse filename
-		int len_pre = dot - path;
-        int len_post = strlen(dot + 1);
-
-		if (len_pre > 8) {
-            // Too many characters before the dot. invalid
-            path = NULL;
-            return;
-        }
-        if (len_post > 3) {
-            // Too many characters after the dot. invalid
-            path = NULL;
-            return;
-        }
-
-        // Appropriate amount of characters before and after the dot
-        // Format appropriately
-        strncpy(formatted_filename, path + 1, len_pre);
-        strncpy(formatted_filename + len_pre, dot + 1, len_post);
+        return -ENAMETOOLONG;
     }
 
-    // Copy new string to path
-    strncpy(path, formatted_filename, MAX_FILENAME_LENGTH);
+    // Format properly.
+    memcpy(clean_path + 1, path + 1, strlen(path + 1) - strlen(last_dot));
+    memcpy(clean_path + 1 + MAX_FILENAME_LENGTH - strlen(last_dot + 1), last_dot + 1, strlen(last_dot + 1));
+    return 0;
 }
-
 
 
 

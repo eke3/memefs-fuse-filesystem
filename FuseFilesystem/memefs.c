@@ -8,7 +8,6 @@
 #include <string.h>
 #include <errno.h>
 #include <arpa/inet.h>
-#include <math.h>
 
 #include "memefs_file_entry.h"
 #include "memefs_superblock.h"
@@ -25,6 +24,7 @@ extern uint16_t main_fat[MAX_FAT_ENTRIES];
     NOTE: when do we use backup fat? theres no indicator for if its corrupted
 
 */
+
 extern uint16_t backup_fat[MAX_FAT_ENTRIES];
 extern uint8_t user_data[USER_DATA_NUM_BLOCKS * BLOCK_SIZE];
 extern int img_fd;
@@ -44,6 +44,8 @@ static void memefs_destroy(void* private_data);
 // Helper functions for loading and unloading data from the filesystem image.
 extern int load_image();
 extern int unload_image();
+
+extern double myCeil(double num);
 
 
 // static int is_illegal_filename(char* filename);
@@ -151,7 +153,12 @@ static int memefs_getattr(const char* path, struct stat* stbuf, struct fuse_file
             stbuf->st_gid = (gid_t)directory[i].gid_owner;
             stbuf->st_size = (off_t)directory[i].size;
             stbuf->st_mtime = (time_t)directory[i].bcd_timestamp;
-            stbuf->st_blocks = (blkcnt_t)((directory[i].size + 511) / 512);
+            /*
+            
+            TODO: see if this is necessary
+            
+            */
+            // stbuf->st_blocks = (blkcnt_t)((directory[i].size + 511) / 512);
             return 0;
         }
     }
@@ -358,8 +365,8 @@ static int memefs_truncate(const char* path, off_t new_size, struct fuse_file_in
         return -ENOENT;
     }
 
-    blocks_in_use = (size_t)ceil((double)directory[i].size / (double)BLOCK_SIZE);
-    blocks_needed = (size_t)ceil((double)new_size / (double)BLOCK_SIZE);
+    blocks_in_use = (size_t)myCeil((double)directory[i].size / (double)BLOCK_SIZE);
+    blocks_needed = (size_t)myCeil((double)new_size / (double)BLOCK_SIZE);
     if (blocks_needed == 0) {
         // Even empty files take up a FAT block.
         blocks_needed = 1;
