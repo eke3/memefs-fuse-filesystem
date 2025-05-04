@@ -14,6 +14,8 @@
 #include "define.h"
 #include "utils.h"
 
+#pragma region Globals
+
 extern memefs_superblock_t main_superblock;
 extern memefs_superblock_t backup_superblock;
 extern memefs_file_entry_t directory[MAX_FILE_ENTRIES];
@@ -29,6 +31,10 @@ extern uint16_t backup_fat[MAX_FAT_ENTRIES];
 extern uint8_t user_data[USER_DATA_NUM_BLOCKS * BLOCK_SIZE];
 extern int img_fd;
 
+#pragma endregion Globals
+
+#pragma region FUSE Prototypes
+
 // FUSE operations.
 static int memefs_getattr(const char* path, struct stat* stbuf, struct fuse_file_info* fi);
 static int memefs_readdir(const char* path, void* buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info* fi, enum fuse_readdir_flags flags);
@@ -41,14 +47,22 @@ static int memefs_write(const char* path, const char *buf, size_t size, off_t of
 static int memefs_truncate(const char* path, off_t new_size, struct fuse_file_info* fi);
 static void memefs_destroy(void* private_data);
 
+#pragma endregion FUSE Prototypes
+
+#pragma region Helpers
 // Helper functions for loading and unloading data from the filesystem image.
 extern int load_image();
 extern int unload_image();
 
+// Utility functions
 extern double myCeil(double num);
 extern void name_to_readable(const char* name, char* readable_name);
 extern void name_to_encoded(const char* readable_name, char* encoded_name);
 extern int check_legal_name(const char* filename);
+
+#pragma endregion Helpers
+
+#pragma region FUSE Implementations
 
 static struct fuse_operations memefs_oper = {
     .getattr = memefs_getattr,
@@ -467,6 +481,8 @@ static void memefs_destroy(void* private_data) {
         img_fd = -1;
     }
 }
+
+#pragma endregion FUSE Implementations
 
 int main(int argc, char* argv[]) {
 	if (argc < 2) {
