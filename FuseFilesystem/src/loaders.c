@@ -22,10 +22,10 @@ static int load_superblock();
 static int load_directory();
 static int load_fat();
 static int load_user_data();
-static void unload_superblock();
-static void unload_directory();
-static void unload_fat();
-static void unload_user_data();
+static int unload_superblock();
+static int unload_directory();
+static int unload_fat();
+static int unload_user_data();
 
 int load_image() {
 	// HINT: Define helper functions: load_superblock and load_directory
@@ -43,16 +43,6 @@ int load_image() {
     main_superblock.cleanly_unmounted = 0xFF;
     backup_superblock.cleanly_unmounted = 0xFF;
     return 0;
-}
-
-int unload_image() {
-
-    /*
-    
-    TODO: Implement this. Also call it every time you modify data.
-    
-    */
-
 }
 
 static int load_user_data() {
@@ -105,10 +95,11 @@ static int load_superblock() {
         perror("Failed to read main superblock");
         return -1;
     }
-    if (strcmp(main_superblock.signature, SIGNATURE) != 0) {
-        fprintf(stderr, "Invalid filesystem signature from main superblock\n");
+    if (strncmp(main_superblock.signature, SIGNATURE, strlen(SIGNATURE)) != 0) {
+        fprintf(stderr, "Invalid filesystem signature from main superblock\n%s\n", main_superblock.signature);
         return -1;
     }
+    fprintf(stderr, "main superblock signature: %s\n", main_superblock.signature);
 
     // Load backup superblock.
     superblock_offset = (off_t)(SUPERBLOCK_BACKUP_BEGIN * BLOCK_SIZE);
@@ -116,7 +107,7 @@ static int load_superblock() {
         perror("Failed to read backup superblock");
         return -1;
     }
-    if (strcmp(backup_superblock.signature, SIGNATURE) != 0) {
+    if (strncmp(backup_superblock.signature, SIGNATURE, strlen(SIGNATURE)) != 0) {
         fprintf(stderr, "Invalid filesystem signature from backup superblock\n");
         return -1;
     }
@@ -132,8 +123,8 @@ static int load_superblock() {
 }
 
 static int load_directory() {
-    int i;
     off_t directory_offset;
+    int i;
     
     // Load directory entries from bottom (253) to top (240)
     directory_offset = (off_t)(DIRECTORY_BEGIN * BLOCK_SIZE);
@@ -149,18 +140,88 @@ static int load_directory() {
     return 0;
 }
 
-static void unload_superblock(void) {
+int unload_image() {
+    if (unload_user_data() < 0 || unload_fat() < 0 || unload_directory() < 0 || unload_superblock() < 0) {
+        sleep(10);
+        return -1;
+    }
+    return 0;
+}
+
+static int unload_superblock(void) {
+    off_t superblock_offset;
+    
+    // Load main superblock.
+    superblock_offset = (off_t)(SUPERBLOCK_MAIN_BEGIN * BLOCK_SIZE);
+    if (pwrite(img_fd, &main_superblock, BLOCK_SIZE, superblock_offset) != sizeof(memefs_superblock_t)) {
+        perror("Failed to write main superblock");
+        return -1;
+    }
+
+    // Load backup superblock.
+    superblock_offset = (off_t)(SUPERBLOCK_BACKUP_BEGIN * BLOCK_SIZE);
+    if (pwrite(img_fd, &backup_superblock, BLOCK_SIZE, superblock_offset) != sizeof(memefs_superblock_t)) {
+        perror("Failed to write backup superblock");
+        return -1;
+    }
+
+    printf("Successfully unloaded superblocks\n");
+    return 0;
+}
+
+static int unload_fat(void) { 
+    off_t fat_offset;
+    int i;
+    
+    // Convert FAT entries from host byte order to network byte order.
+    for (i = 0; i < MAX_FAT_ENTRIES; i++) {
+        main_fat[i] = htons(main_fat[i]);
+        backup_fat[i] = htons(backup_fat[i]);
+    }
+
+    // Load main FAT.
+    fat_offset = (off_t)(FAT_MAIN_BEGIN * BLOCK_SIZE);
+    if (pwrite(img_fd, &main_fat, BLOCK_SIZE, fat_offset) != sizeof(main_fat)) {
+        perror("Failed to write main FAT");
+        return -1;
+    }
+
+    // Load backup FAT.
+    fat_offset = (off_t)(FAT_BACKUP_BEGIN * BLOCK_SIZE);
+    if (pwrite(img_fd, &backup_fat, BLOCK_SIZE, fat_offset) != sizeof(backup_fat)) {
+        perror("Failed to write backup FAT");
+        return -1;
+    }
+
+    // Convert local FAT entries from network byte order back to host byte order.
+    for (i = 0; i < MAX_FAT_ENTRIES; i++) {
+        main_fat[i] = ntohs(main_fat[i]);
+        backup_fat[i] = ntohs(backup_fat[i]);
+    }
+
+    printf("Successfully unloaded FAT blocks\n");
+    return 0;
+}
+
+static int unload_directory(void) {
+
+/*
+
+    TODO: Implement this.
+
+*/
 
 }
 
-static void unload_fat(void) { 
+static int unload_user_data(void) {
+    off_t data_offset;
 
-}
+    data_offset = (off_t)(USER_DATA_BEGIN * BLOCK_SIZE);
+    if (pwrite(img_fd, &user_data, USER_DATA_NUM_BLOCKS * BLOCK_SIZE, data_offset) != (USER_DATA_NUM_BLOCKS * BLOCK_SIZE)) {
+        perror("Failed to write user data");
+        return -1;
+    }
 
-static void unload_directory(void) {
-
-}
-
-static void unload_user_data(void) {
-
+    printf("Successfully unloaded user data\n");
+    return 0;
 }

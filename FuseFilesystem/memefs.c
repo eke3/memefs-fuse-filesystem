@@ -107,6 +107,9 @@ static int memefs_create(const char* path, mode_t mode, struct fuse_file_info* f
                     backup_fat[j] = (uint16_t)0xFFFF;
                     name_to_readable(directory[i].filename, readable_filename);
                     fprintf(stderr, "\n\n\n[%d] CREATED FILE: %s with permissions: %d\n\n\n", i, readable_filename, (int)directory[i].type_permissions);
+                    if (unload_image() != 0) {
+                        fprintf(stderr, "Failed to update image\n");
+                    }
                     return 0;
                 }
             }
@@ -302,6 +305,9 @@ static int memefs_unlink(const char* path) {
     }
     directory[i].type_permissions = 0x0000;
 
+    if (unload_image() != 0) {
+        fprintf(stderr, "Failed to update image\n");
+    }
     return 0;
 }
 
@@ -320,7 +326,9 @@ static int memefs_write(const char* path, const char* buf, size_t size, off_t of
     }
 
     
-
+    if (unload_image() != 0) {
+        fprintf(stderr, "Failed to update image\n");
+    }
     return 0;
     
     /*
@@ -450,6 +458,8 @@ static void memefs_destroy(void* private_data) {
     if (unload_image() != 0) {
         fprintf(stderr, "Failed to copy filesystem to image\n");
     }
+    main_superblock.cleanly_unmounted = 0x00;
+    backup_superblock.cleanly_unmounted = 0x00;
 
     // Close the image file descriptor
     if (img_fd >= 0) {
