@@ -4,6 +4,7 @@
 #include <string.h>
 #include <errno.h>
 #include <stdio.h>
+#include <ctype.h>
 
 #include "define.h"
 
@@ -75,6 +76,55 @@ void name_to_encoded(const char* readable_name, char* encoded_name) {
     memcpy(encoded_name, filename, 8);
     memcpy(encoded_name + 8, extension, 3);
 }
+int check_legal_name(const char* filename) {
+    int i, j;
 
+    if (strlen(filename) >= MAX_READABLE_FILENAME_LENGTH) {
+        // File name too long.
+        return -ENAMETOOLONG;
+    }
 
+    // Check filename for illegal characters or too long.
+    for (i = 0; ((filename)[i] != '.') && ((filename)[i] != '\0'); i++) {
+        if (i > 7) {
+            // Too many characters before '.'
+            return -ENAMETOOLONG;
+        }
+
+        if (!isalnum((filename)[i]) 
+            && ((filename)[i] != '^') 
+            && ((filename)[i] != '-') 
+            && ((filename)[i] != '_') 
+            && ((filename)[i] != '=') 
+            && ((filename)[i] != '|')) {
+            // Invalid character in file name.
+            return -EINVAL;
+        }
+    }
+
+    if ((filename)[i] == '\0') {
+        // No '.' in filename.
+        return -EINVAL;
+    }
+
+    // Check extension for illegal characters or too long.
+    for (j = 0; (filename + i + 1)[j] != '\0'; j++) {
+        if (j > 2) {
+            // Too many characters after '.'
+            return -ENAMETOOLONG;
+        }
+
+        if (!isalnum((filename + i + 1)[j]) 
+            && ((filename + i + 1)[j] != '^') 
+            && ((filename + i + 1)[j] != '-') 
+            && ((filename + i + 1)[j] != '_') 
+            && ((filename + i + 1)[j] != '=') 
+            && ((filename + i + 1)[j] != '|')) {
+            // Invalid character in file extension.
+            return -EINVAL;
+        }
+    }
+
+    return 0;
+}
 

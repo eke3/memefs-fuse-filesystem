@@ -48,9 +48,7 @@ extern int unload_image();
 extern double myCeil(double num);
 extern void name_to_readable(const char* name, char* readable_name);
 extern void name_to_encoded(const char* readable_name, char* encoded_name);
-
-
-// static int is_illegal_filename(char* filename);
+extern int check_legal_name(const char* filename);
 
 static struct fuse_operations memefs_oper = {
     .getattr = memefs_getattr,
@@ -62,39 +60,20 @@ static struct fuse_operations memefs_oper = {
     .unlink  = memefs_unlink,
     // .write = memefs_write,
     .truncate = memefs_truncate,
-    // .destroy = memefs_destroy,
+    .destroy = memefs_destroy,
 };
 
-// static int scrub_path(char* path) {
-//     // remove leading 
-
-//     return 0;
-// }
-
-// static int is_illegal_filename(char* filename) {
-//     // not alnum OR is space OR 
-//     return 0;
-// }
-
-
-static int memefs_create(const char *path, mode_t mode, struct fuse_file_info *fi) {
+static int memefs_create(const char* path, mode_t mode, struct fuse_file_info* fi) {
     (void) fi;
     (void) mode;
     char encoded_filename[MAX_ENCODED_FILENAME_LENGTH];
     char readable_filename[MAX_READABLE_FILENAME_LENGTH];
-    int i, j;
+    int i, j, name_legal;
 
-    // TODO: Don't allow creating files with illegal or too many characters
-
-    /*
-    
-    Maybe delegate this check to another function
-    
-    */
-    // if (strlen(path + 1) > MAX_ENCODED_FILENAME_LENGTH) {
-    //     // File name too long.
-    //     return -ENAMETOOLONG;
-    // }
+    if ((name_legal = check_legal_name(path + 1)) != 0) {
+        // File name is not legal.
+        return name_legal;
+    }
 
     for (i = 0; i < MAX_FILE_ENTRIES; i++) {
         name_to_readable(directory[i].filename, readable_filename);
@@ -118,14 +97,14 @@ static int memefs_create(const char *path, mode_t mode, struct fuse_file_info *f
                     name_to_encoded(path + 1, encoded_filename);
                     memcpy(directory[i].filename, encoded_filename, 11);
                     directory[i].type_permissions = (uint16_t)(S_IFREG | 0777);
-                    directory[i].start_block = j;
-                    directory[i].unused = 0;
+                    directory[i].start_block = (uint16_t)j;
+                    directory[i].unused = (uint16_t)0x00;
                     generate_memefs_timestamp(directory[i].bcd_timestamp);
-                    directory[i].uid_owner = getuid();
-                    directory[i].gid_owner = getgid();
-                    directory[i].size = 0;
-                    main_fat[j] = 0xFFFF;
-                    backup_fat[j] = 0xFFFF;
+                    directory[i].uid_owner = (uint16_t)getuid();
+                    directory[i].gid_owner = (uint16_t)getgid();
+                    directory[i].size = (uint32_t)0;
+                    main_fat[j] = (uint16_t)0xFFFF;
+                    backup_fat[j] = (uint16_t)0xFFFF;
                     name_to_readable(directory[i].filename, readable_filename);
                     fprintf(stderr, "\n\n\n[%d] CREATED FILE: %s with permissions: %d\n\n\n", i, readable_filename, (int)directory[i].type_permissions);
                     return 0;
@@ -148,7 +127,6 @@ static int memefs_getattr(const char* path, struct stat* stbuf, struct fuse_file
     (void) fi;
     char readable_filename[MAX_READABLE_FILENAME_LENGTH];
     int i;
-    // fprintf(stderr, "initial value of i:\n\n\n[%d]\n\n\n", i);
 
     memset(stbuf, 0, sizeof(struct stat));
 
@@ -163,7 +141,7 @@ static int memefs_getattr(const char* path, struct stat* stbuf, struct fuse_file
         name_to_readable(directory[i].filename, readable_filename);
         fprintf(stderr, "\n[%d]: %s\t%o\n", i, readable_filename, directory[i].type_permissions);
 
-        if ((strcmp(readable_filename, path + 1) == 0) && (directory[i].type_permissions != 0x0000)) {
+        if ((strcmp(readable_filename, path + 1) == 0) && (directory[i].type_permissions != 0x0000) && (check_legal_name(readable_filename) == 0)) {
             // Found file.
             fprintf(stderr, "\n\n\n[%d] FOUND FILE WITH NAME: %sPERMISSIONS: %o\n\n\n", i, readable_filename, directory[i].type_permissions);
             stbuf->st_mode = (mode_t)(S_IFREG | 0777);
@@ -189,8 +167,8 @@ static int memefs_readdir(const char* path, void* buf, fuse_fill_dir_t filler, o
     (void) offset;
     (void) fi;
     (void) flags;
-    int i;
     char readable_filename[MAX_READABLE_FILENAME_LENGTH];
+    int i;
 
     if (strcmp(path, "/") != 0) {
         // Not root directory.
@@ -200,12 +178,13 @@ static int memefs_readdir(const char* path, void* buf, fuse_fill_dir_t filler, o
     filler(buf, ".", NULL, 0, 0);
     filler(buf, "..", NULL, 0, 0);
     for (i = 0; i < MAX_FILE_ENTRIES; i++) {
+        name_to_readable(directory[i].filename, readable_filename);
         if (directory[i].type_permissions != 0x0000
             && strlen(directory[i].filename) > 0
-            && directory[i].filename[0] != '\0') {
+            && directory[i].filename[0] != '\0'
+            && check_legal_name(readable_filename) == 0) {
             // Found file.
             // Convert to readable name.
-            name_to_readable(directory[i].filename, readable_filename);
             filler(buf, readable_filename, NULL, 0, 0);
         }
     }
@@ -220,8 +199,8 @@ static int memefs_open(const char* path, struct fuse_file_info* fi) {
 
     for (i = 0; i < MAX_FILE_ENTRIES; i++) {
         name_to_readable(directory[i].filename, readable_filename);
-        fprintf(stderr, "\n\npath: %s\nreadable_filename: %s\n permissions: %o\n", path+1, readable_filename, directory[i].type_permissions);
-        if ((strcmp(readable_filename, path + 1) == 0) && (directory[i].type_permissions != 0x0000)) {
+        fprintf(stderr, "\n\npath: %s\nreadable_filename: %s\n permissions: %o\n", path + 1, readable_filename, directory[i].type_permissions);
+        if ((strcmp(readable_filename, path + 1) == 0) && (directory[i].type_permissions != 0x0000) && (check_legal_name(readable_filename) == 0)) {
             // Found file entry.
             fprintf(stderr, "\n\n\nFOUND EXISTING FILE: %s\n\n\n", readable_filename);
             return 0;
@@ -248,7 +227,7 @@ static int memefs_read(const char* path, char* buf, size_t size, off_t offset, s
     // locate file in directory
     for (i = 0, curr_block = 0xFFFF; i < MAX_FILE_ENTRIES; i++) {
         name_to_readable(directory[i].filename, readable_filename);
-        if ((strcmp(readable_filename, path + 1) == 0) && (directory[i].type_permissions != 0x0000)) {
+        if ((strcmp(readable_filename, path + 1) == 0) && (directory[i].type_permissions != 0x0000) && (check_legal_name(readable_filename) == 0)) {
             // Found file entry.
             curr_block = directory[i].start_block;
             file_size = directory[i].size;
@@ -295,7 +274,7 @@ static int memefs_read(const char* path, char* buf, size_t size, off_t offset, s
     return bytes_read;
 }
 
-static int memefs_unlink(const char *path) {
+static int memefs_unlink(const char* path) {
     char readable_filename[MAX_READABLE_FILENAME_LENGTH];
     int i;
     uint16_t curr_block, next_block;
@@ -303,7 +282,7 @@ static int memefs_unlink(const char *path) {
     // Find file in directory.
     for (i = 0, curr_block = 0xFFFF; i < MAX_FILE_ENTRIES; i++) {
         name_to_readable(directory[i].filename, readable_filename);
-        if ((strcmp(readable_filename, path + 1) == 0) && (directory[i].type_permissions != 0x0000)) {
+        if ((strcmp(readable_filename, path + 1) == 0) && (directory[i].type_permissions != 0x0000) && (check_legal_name(readable_filename) == 0)) {
             // Found file entry.
             curr_block = directory[i].start_block;
             break;
@@ -326,7 +305,7 @@ static int memefs_unlink(const char *path) {
     return 0;
 }
 
-static int memefs_write(const char* path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
+static int memefs_write(const char* path, const char* buf, size_t size, off_t offset, struct fuse_file_info* fi) {
     (void) buf;
     (void) size;
     (void) offset;
@@ -334,7 +313,7 @@ static int memefs_write(const char* path, const char *buf, size_t size, off_t of
     int i;
 
     for (i = 0; i < MAX_FILE_ENTRIES; i++) {
-        if ((strcmp(directory[i].filename, path + 1) == 0) && (directory[i].type_permissions != 0x0000)) {
+        if ((strcmp(directory[i].filename, path + 1) == 0) && (directory[i].type_permissions != 0x0000) && (check_legal_name(path + 1) == 0)) {
             // Found file.
 
         }
@@ -384,7 +363,7 @@ static int memefs_truncate(const char* path, off_t new_size, struct fuse_file_in
     // Find file in directory.
     for (i = 0, h = 0, found = 0; i < MAX_FILE_ENTRIES && !found; i++) {
         name_to_readable(directory[i].filename, readable_filename);
-        if ((strcmp(readable_filename, path + 1) == 0) && directory[i].type_permissions != 0x0000) {
+        if ((strcmp(readable_filename, path + 1) == 0) && (directory[i].type_permissions != 0x0000) && (check_legal_name(readable_filename) == 0)) {
             // Found file.
             found = 1;
             h = i;

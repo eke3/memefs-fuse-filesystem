@@ -17,6 +17,16 @@ uint16_t backup_fat[MAX_FAT_ENTRIES];
 uint8_t user_data[USER_DATA_NUM_BLOCKS * BLOCK_SIZE];
 int img_fd;
 
+// Helper functions for loading and unloading data from the filesystem image.
+static int load_superblock();
+static int load_directory();
+static int load_fat();
+static int load_user_data();
+static void unload_superblock();
+static void unload_directory();
+static void unload_fat();
+static void unload_user_data();
+
 int load_image() {
 	// HINT: Define helper functions: load_superblock and load_directory
 	if (load_superblock() < 0 || load_directory() < 0) {
@@ -45,7 +55,7 @@ int unload_image() {
 
 }
 
-int load_user_data() {
+static int load_user_data() {
     off_t data_offset;
 
     data_offset = (off_t)(USER_DATA_BEGIN * BLOCK_SIZE);
@@ -58,7 +68,7 @@ int load_user_data() {
     return 0;
 }
 
-int load_fat() {
+static int load_fat() {
     off_t fat_offset;
     int i;
     
@@ -86,7 +96,7 @@ int load_fat() {
     return 0;
 }
 
-int load_superblock() {
+static int load_superblock() {
     off_t superblock_offset;
     
     // Load main superblock.
@@ -121,7 +131,7 @@ int load_superblock() {
     return 0;
 }
 
-int load_directory() {
+static int load_directory() {
     int i;
     off_t directory_offset;
     
@@ -137,4 +147,20 @@ int load_directory() {
 
     printf("Successfully loaded directory\n");
     return 0;
+}
+
+static void unload_superblock(void) {
+
+}
+
+static void unload_fat(void) { 
+
+}
+
+static void unload_directory(void) {
+
+}
+
+static void unload_user_data(void) {
+
 }

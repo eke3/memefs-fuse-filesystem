@@ -2,3 +2,5 @@
 memefs
 mkmemefs
 myfilesystem.img
+unit_tests.c
+test
