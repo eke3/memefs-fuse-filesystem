@@ -9,7 +9,7 @@
 typedef struct memefs_file_entry {
     uint16_t type_permissions; // File type and permissions
     uint16_t start_block;      // Starting block number
-    char filename[MAX_FILENAME_LENGTH];         // Filename
+    char filename[MAX_ENCODED_FILENAME_LENGTH];         // Filename
     uint8_t unused;            // Unused byte
     uint8_t bcd_timestamp[8];  // Timestamp in BCD format
     uint32_t size;             // File size

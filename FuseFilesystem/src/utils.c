@@ -39,54 +39,18 @@ double myCeil(double num) {
     return whole_num;
 }
 
-int scrub_path(const char* path, char* clean_path) {
-    memset(clean_path, '/', 1);
-    memset(clean_path + 1, '\0', MAX_FILENAME_LENGTH);
-
-    if (strcmp(path, "/") == 0) {
-        // Root directory.
-        return 0;
-    }
-
-    char* last_dot = strrchr(path, '.');
-    if (last_dot == NULL) {
-        // No file extension.
-        if (strlen(path + 1) > MAX_FILENAME_LENGTH) {
-            // File name too long.
-            return -ENAMETOOLONG;
-        }
-        memcpy(clean_path + 1, path + 1, strlen(path + 1));
-        return 0;
-    }
-
-    if (strlen(last_dot + 1) > 3) {
-        // File extension too long.
-        return -ENAMETOOLONG;
-    }
-
-    if ((strlen(path) - strlen(last_dot)) > MAX_FILENAME_LENGTH - 4) {
-        // File name too long.
-        return -ENAMETOOLONG;
-    }
-
-    // Format properly.
-    memcpy(clean_path + 1, path + 1, strlen(path + 1) - strlen(last_dot));
-    memcpy(clean_path + 1 + MAX_FILENAME_LENGTH - strlen(last_dot + 1), last_dot + 1, strlen(last_dot + 1));
-    return 0;
-}
-
 void name_to_readable(const char* name, char* readable_name) {
     char filename[9];
     char extension[4];
 
     memset(filename, '\0', 9);
     memset(extension, '\0', 4);
-    memset(readable_name, '\0', MAX_FILENAME_LENGTH);
+    memset(readable_name, '\0', MAX_READABLE_FILENAME_LENGTH);
 
     memcpy(filename, name, 8);
-    memcpy(extension, name + 8, 3);
+    strcpy(extension, name + 8);
 
-    sprintf(readable_name, "%s.%s", filename, extension);
+    snprintf(readable_name, MAX_READABLE_FILENAME_LENGTH, "%s.%s", filename, extension);
 }
 
 void name_to_encoded(const char* readable_name, char* encoded_name) {
@@ -94,7 +58,7 @@ void name_to_encoded(const char* readable_name, char* encoded_name) {
     char extension[4];
     int i;
 
-    memset(encoded_name, '\0', MAX_FILENAME_LENGTH);
+    memset(encoded_name, '\0', MAX_ENCODED_FILENAME_LENGTH);
     memset(filename, '\0', 9);
     memset(extension, '\0', 4);
 
@@ -111,3 +75,6 @@ void name_to_encoded(const char* readable_name, char* encoded_name) {
     memcpy(encoded_name, filename, 8);
     memcpy(encoded_name + 8, extension, 3);
 }
+
+
+
