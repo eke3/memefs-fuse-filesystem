@@ -463,9 +463,11 @@ static int memefs_truncate(const char* path, off_t new_size, struct fuse_file_in
 
     // Update file size.
     directory[h].size = (uint32_t)new_size;
+    if (unload_image() != 0) {
+        fprintf(stderr, "Failed to update image\n");
+    }
     return 0;
 }
-
 
 static void memefs_destroy(void* private_data) {
     (void) private_data;
