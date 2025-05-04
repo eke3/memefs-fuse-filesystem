@@ -340,10 +340,7 @@ static int memefs_write(const char* path, const char* buf, size_t size, off_t of
     }
 
     
-    if (unload_image() != 0) {
-        fprintf(stderr, "Failed to update image\n");
-    }
-    return 0;
+
     
     /*
     
@@ -367,6 +364,10 @@ static int memefs_write(const char* path, const char* buf, size_t size, off_t of
     update size and timestamp in directory entry
     
     */
+    if (unload_image() != 0) {
+        fprintf(stderr, "Failed to update image\n");
+    }
+    return 0;
 }
 
 static int memefs_truncate(const char* path, off_t new_size, struct fuse_file_info* fi) {

@@ -15,17 +15,19 @@ VOLUME_NAME := MYVOLUME
 
 # Compiler and flags
 CC := gcc
-CFLAGS := -Wall -Wextra -D_FILE_OFFSET_BITS=64 -Wno-unknown-pragmas
+CFLAGS := -Wall -Wextra -D_FILE_OFFSET_BITS=64 -Wno-unknown-pragmas -Iinclude
 LDFLAGS := -lfuse3
 
-.PHONY: all build run debug clean create_dir unmount_memefs mount_memefs create_memefs_img
+.PHONY: all build rebuild run debug clean create_dir unmount_memefs mount_memefs create_memefs_img
 
 all: build
 
 build: build_memefs build_mkmemefs
 
+rebuild: create_memefs_img build_memefs
+
 build_memefs: $(MEMEFS_SRC)
-	$(CC) $(CFLAGS) -Iinclude -o $(MEMEFS) $(MEMEFS_SRC) $(LDFLAGS)
+	$(CC) $(CFLAGS) -o $(MEMEFS) $(MEMEFS_SRC) $(LDFLAGS)
 
 build_mkmemefs: $(MKMEMEFS_SRC)
 	$(CC) $(CFLAGS) -o $(MKMEMEFS) $(MKMEMEFS_SRC)

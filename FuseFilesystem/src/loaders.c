@@ -82,6 +82,12 @@ static int load_fat() {
         backup_fat[i] = ntohs(backup_fat[i]);
     }
 
+    if (MAX_FAT_ENTRIES > 0) {
+        printf("First entry in main FAT: 0x%04x\n", main_fat[0]);
+        printf("Second entry in main FAT: 0x%04x\n", main_fat[1]);
+    }
+
+
     printf("Successfully loaded FATs\n");
     return 0;
 }
@@ -142,7 +148,6 @@ static int load_directory() {
 
 int unload_image() {
     if (unload_user_data() < 0 || unload_fat() < 0 || unload_directory() < 0 || unload_superblock() < 0) {
-        sleep(10);
         return -1;
     }
     return 0;
@@ -204,13 +209,21 @@ static int unload_fat(void) {
 }
 
 static int unload_directory(void) {
+    off_t directory_offset;
+    int i;
 
-/*
+    // Unload directory entries from bottom (253) to top (240)
+    directory_offset = (off_t)(DIRECTORY_BEGIN * BLOCK_SIZE);
+    for (i = MAX_FILE_ENTRIES - 1; i >= 0; i--) {
+        if (pwrite(img_fd, &directory[i], FILE_ENTRY_SIZE, directory_offset) != FILE_ENTRY_SIZE) {
+            perror("Failed to write directory entry");
+            return -1;
+        }
+        directory_offset -= (off_t)FILE_ENTRY_SIZE;
+    }
 
-    TODO: Implement this.
-
-*/
-
+    printf("Successfully unloaded directory\n");
+    return 0;
 }
 
 static int unload_user_data(void) {
