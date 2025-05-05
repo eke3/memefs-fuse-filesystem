@@ -2,6 +2,9 @@
 #define UTILS_H
 
 #include <stdint.h>
+#include <stddef.h>
+
+#include "memefs_file_entry.h"
 
 typedef enum write_type {
     OVERWRITE,

@@ -7,7 +7,10 @@
 #include <ctype.h>
 
 #include "define.h"
-#include "memefs_file_entry.h"
+
+extern uint16_t main_fat[MAX_FAT_ENTRIES];
+extern uint16_t backup_fat[MAX_FAT_ENTRIES];
+extern uint8_t user_data[USER_DATA_NUM_BLOCKS * BLOCK_SIZE];
 
 uint8_t to_bcd(uint8_t num) {
 	if (num > 99) return 0xFF;
@@ -77,6 +80,7 @@ void name_to_encoded(const char* readable_name, char* encoded_name) {
     memcpy(encoded_name, filename, 8);
     memcpy(encoded_name + 8, extension, 3);
 }
+
 int check_legal_name(const char* filename) {
     int i, j;
 
@@ -132,11 +136,86 @@ int check_legal_name(const char* filename) {
 int overwrite_file(const memefs_file_entry_t* file_entry, const char* buf, size_t size, off_t offset) {
 
 
+    
 
 }
 
 int append_file(const memefs_file_entry_t* file_entry, const char* buf, size_t size, off_t offset) {
+    (void) offset;
+
+    printf("Buffer: ");
+    for (int j = 0; j < size; j++) {
+        printf("%c", buf[j]);
+    }
+    printf("\n");
+
+    // TODO: check if there is enough space to write, return -ENOSPC
 
 
+    int last_full_fat_block, last_data_byte;
+    int curr_block, prev_block;
+    size_t space_to_write_in_block;
+    off_t buffer_offset;
+    int i;
 
+    last_full_fat_block = (int)(file_entry->size / BLOCK_SIZE);
+    last_data_byte = (int)(file_entry->size % BLOCK_SIZE);
+
+    curr_block = file_entry->start_block;
+    prev_block = curr_block;
+
+    while (last_full_fat_block > 0) {
+        prev_block = curr_block;
+        curr_block = main_fat[curr_block];
+        last_full_fat_block--;
+    }
+
+    uint8_t* start; // start writing data from here
+    start = &user_data[(prev_block * BLOCK_SIZE) + last_data_byte];
+    space_to_write_in_block = BLOCK_SIZE - last_data_byte;
+
+    buffer_offset = 0;
+
+    // while size of data to copy is greater than the space left in current block:
+
+    // copy data to fill current block
+    // make and link new fat entry with
+    // reset space_to_write_in_block to BLOCK_SIZE
+    // reduce size by number of bytes just written
+    // move start pos to beginning of new block
+
+    // once size is less than or equal to space left in block:
+    // copy data to fill as much of current block as needed (size)
+    // make and link new fat entry
+
+    // return 0
+
+    while (size > space_to_write_in_block) {
+        fprintf(stderr, "\n\nsize > space_to_write_in_block\nsize = %ld, space_to_write_in_block = %ld\n\n", size, space_to_write_in_block);
+        
+        memcpy(start, buf + buffer_offset, space_to_write_in_block);
+        for (i = 0; i < MAX_FAT_ENTRIES; i++) {
+            if (main_fat[i] == 0x0000) {
+                // Found empty FAT entry.
+                prev_block = curr_block;
+                curr_block = i;
+                main_fat[i] = 0xFFFF;
+                break;
+            }
+        }
+        buffer_offset += space_to_write_in_block;
+        size -= space_to_write_in_block;
+        space_to_write_in_block = BLOCK_SIZE;
+        start = &user_data[curr_block * BLOCK_SIZE];       
+    }
+
+    fprintf(stderr, "\n\nsize <= space_to_write_in_block\nsize = %ld, space_to_write_in_block = %ld\n\n", size, space_to_write_in_block);
+    memcpy(start, buf + buffer_offset, size);
+
+    printf("Wrote: ");
+    for (int j = 0; j < size; j++) {
+        printf("%c", *(start + j));
+    }
+    printf("\n");
+    return 0;
 }

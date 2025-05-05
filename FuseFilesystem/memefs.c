@@ -72,7 +72,7 @@ static struct fuse_operations memefs_oper = {
     .create  = memefs_create,
     .utimens = memefs_utimens,
     .unlink  = memefs_unlink,
-    // .write = memefs_write,
+    .write = memefs_write,
     .truncate = memefs_truncate,
     .destroy = memefs_destroy,
 };
@@ -233,6 +233,15 @@ static int memefs_open(const char* path, struct fuse_file_info* fi) {
 }
 
 static int memefs_read(const char* path, char* buf, size_t size, off_t offset, struct fuse_file_info* fi) {
+
+    
+    /* 
+    
+    TODO: don't think this works
+    
+    */
+
+
     (void) size;
     (void) offset;
     (void) fi;
@@ -327,18 +336,21 @@ static int memefs_unlink(const char* path) {
 
 static int memefs_write(const char* path, const char* buf, size_t size, off_t offset, struct fuse_file_info* fi) {
     (void) fi;
+    char readable_filename[MAX_READABLE_FILENAME_LENGTH];
     write_type_t write_type;
     int i;
 
     write_type = INVALID;
     for (i = 0; i < MAX_FILE_ENTRIES; i++) {
-        if ((strcmp(directory[i].filename, path + 1) == 0) && (directory[i].type_permissions != 0x0000) && (check_legal_name(path + 1) == 0)) {
+        name_to_readable(directory[i].filename, readable_filename);
+        if ((strcmp(readable_filename, path + 1) == 0) && (directory[i].type_permissions != 0x0000) && (check_legal_name(path + 1) == 0)) {
             // Found file.
             if (offset < directory[i].size) {
                 write_type = OVERWRITE;
                 break;
             } else if (offset == directory[i].size) {
                 write_type = APPEND;
+                fprintf(stderr, "\n\nAPPEND\n\n");
                 break;
             }
         }
@@ -423,8 +435,8 @@ static int memefs_truncate(const char* path, off_t new_size, struct fuse_file_in
         return -ENOENT;
     }
 
-    blocks_in_use = (size_t)myCeil((double)directory[i].size / (double)BLOCK_SIZE);
-    blocks_needed = (size_t)myCeil((double)new_size / (double)BLOCK_SIZE);
+    blocks_in_use = (int)myCeil((double)directory[i].size / (double)BLOCK_SIZE);
+    blocks_needed = (int)myCeil((double)new_size / (double)BLOCK_SIZE);
     if (blocks_needed == 0) {
         // Even empty files take up a FAT block.
         blocks_needed = 1;
