@@ -7,6 +7,7 @@
 #include <ctype.h>
 
 #include "define.h"
+#include "memefs_file_entry.h"
 
 uint8_t to_bcd(uint8_t num) {
 	if (num > 99) return 0xFF;
@@ -128,3 +129,14 @@ int check_legal_name(const char* filename) {
     return 0;
 }
 
+int overwrite_file(const memefs_file_entry_t* file_entry, const char* buf, size_t size, off_t offset) {
+
+
+
+}
+
+int append_file(const memefs_file_entry_t* file_entry, const char* buf, size_t size, off_t offset) {
+
+
+
+}

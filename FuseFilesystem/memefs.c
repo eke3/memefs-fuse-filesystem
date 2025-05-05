@@ -326,18 +326,42 @@ static int memefs_unlink(const char* path) {
 }
 
 static int memefs_write(const char* path, const char* buf, size_t size, off_t offset, struct fuse_file_info* fi) {
-    (void) buf;
-    (void) size;
-    (void) offset;
     (void) fi;
+    write_type_t write_type;
     int i;
 
+    write_type = INVALID;
     for (i = 0; i < MAX_FILE_ENTRIES; i++) {
         if ((strcmp(directory[i].filename, path + 1) == 0) && (directory[i].type_permissions != 0x0000) && (check_legal_name(path + 1) == 0)) {
             // Found file.
-
+            if (offset < directory[i].size) {
+                write_type = OVERWRITE;
+                break;
+            } else if (offset == directory[i].size) {
+                write_type = APPEND;
+                break;
+            }
         }
     }
+
+    switch (write_type) {
+        case OVERWRITE:
+            if (overwrite_file(&directory[i], buf, size, offset) != 0) {
+                return -EIO;
+            }
+            break;
+        case APPEND:
+            if (append_file(&directory[i], buf, size, offset) != 0) {
+                return -EIO;
+            }
+            break;
+        // OPTIONAL case Zero Fill Append when offset > file size
+        case INVALID:
+            return -ENOENT;
+    }
+    directory[i].size = offset + size;
+    generate_memefs_timestamp(directory[i].bcd_timestamp);
+
 
     
 

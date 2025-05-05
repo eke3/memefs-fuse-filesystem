@@ -3,6 +3,12 @@
 
 #include <stdint.h>
 
+typedef enum write_type {
+    OVERWRITE,
+    APPEND,
+    INVALID
+} write_type_t;
+
 // Helper functions for fuse operations
 void generate_memefs_timestamp(uint8_t bcd_time[8]);
 uint8_t to_bcd(uint8_t num);
@@ -10,7 +16,7 @@ double myCeil(double num);
 int check_legal_name(const char* filename);
 void name_to_readable(const char* name, char* readable_name);
 void name_to_encoded(const char* readable_name, char* encoded_name);
-
-// TODO: parsers for file names
+int overwrite_file(const memefs_file_entry_t* file_entry, const char* buf, size_t size, off_t offset);
+int append_file(const memefs_file_entry_t* file_entry, const char* buf, size_t size, off_t offset);
 
 #endif // UTILS_H
