@@ -200,6 +200,7 @@ int append_file(const memefs_file_entry_t* file_entry, const char* buf, size_t s
                 prev_block = curr_block;
                 curr_block = i;
                 main_fat[i] = 0xFFFF;
+                backup_fat[i] = 0xFFFF;
                 break;
             }
         }
