@@ -134,15 +134,16 @@ static int load_directory() {
     
     // Load directory entries from bottom (253) to top (240)
     directory_offset = (off_t)(DIRECTORY_BEGIN * BLOCK_SIZE);
-    for (i = MAX_FILE_ENTRIES - 1; i >= 0; i--) {
+    for (i = 0; i < MAX_FILE_ENTRIES; i++) {
         if (pread(img_fd, &directory[i], FILE_ENTRY_SIZE, directory_offset) != FILE_ENTRY_SIZE) {
             perror("Failed to read directory entry");
             return -1;
         }
-        directory_offset -= (off_t)FILE_ENTRY_SIZE;
+        directory_offset += (off_t)FILE_ENTRY_SIZE;
     }
 
     printf("Successfully loaded directory\n");
+
     return 0;
 }
 
@@ -214,15 +215,22 @@ static int unload_directory(void) {
 
     // Unload directory entries from bottom (253) to top (240)
     directory_offset = (off_t)(DIRECTORY_BEGIN * BLOCK_SIZE);
-    for (i = MAX_FILE_ENTRIES - 1; i >= 0; i--) {
+    for (i = 0; i < MAX_FILE_ENTRIES; i++) {
         if (pwrite(img_fd, &directory[i], FILE_ENTRY_SIZE, directory_offset) != FILE_ENTRY_SIZE) {
             perror("Failed to write directory entry");
             return -1;
         }
-        directory_offset -= (off_t)FILE_ENTRY_SIZE;
+        directory_offset += (off_t)FILE_ENTRY_SIZE;
     }
 
-    printf("Successfully unloaded directory\n");
+    // int i;
+    // char readable_filename[MAX_READABLE_FILENAME_LENGTH];
+    // for (i = 0; i < MAX_FILE_ENTRIES; i++) {
+    //     name_to_readable(directory[i].filename, readable_filename);
+    //     printf("File %d: %s\n", i, readable_filename);
+    // }
+
+    // printf("Successfully unloaded directory\n");
     return 0;
 }
 

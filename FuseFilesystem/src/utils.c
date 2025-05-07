@@ -196,14 +196,23 @@ int append_file(const memefs_file_entry_t* file_entry, const char* buf, size_t s
         memcpy(start, buf + buffer_offset, space_to_write_in_block);
         for (i = 0; i < MAX_FAT_ENTRIES; i++) {
             if (main_fat[i] == 0x0000) {
-                // Found empty FAT entry.
+                int new_block = i;
+        
+                // Link previous block to new block in FAT.
                 prev_block = curr_block;
-                curr_block = i;
-                main_fat[i] = 0xFFFF;
-                backup_fat[i] = 0xFFFF;
+                main_fat[prev_block] = new_block;
+                backup_fat[prev_block] = new_block;
+        
+                // Mark new block as end of chain.
+                main_fat[new_block] = 0xFFFF;
+                backup_fat[new_block] = 0xFFFF;
+        
+                prev_block = curr_block;
+                curr_block = new_block;
                 break;
             }
         }
+        
         buffer_offset += space_to_write_in_block;
         size -= space_to_write_in_block;
         space_to_write_in_block = BLOCK_SIZE;

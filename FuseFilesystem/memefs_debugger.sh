@@ -37,5 +37,3 @@ dump_block 239 "Backup FAT"
 dump_range 240 14 "Directory Region" // note this has changed 4/22/25
 dump_range 1 18 "Reserved Blocks"
 dump_range 19 220 "User Data Blocks" // note this has changed 4/22/25
-
-echo "Done."

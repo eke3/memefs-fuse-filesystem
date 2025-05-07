@@ -371,7 +371,10 @@ static int memefs_write(const char* path, const char* buf, size_t size, off_t of
         case INVALID:
             return -ENOENT;
     }
+    fprintf(stderr, "\n\nOLD SIZE: %d\n\n", (int)directory[i].size);
     directory[i].size = offset + size;
+    fprintf(stderr, "\n\nNEW SIZE: %d\n\n", (int)directory[i].size);
+            
     generate_memefs_timestamp(directory[i].bcd_timestamp);
 
 
