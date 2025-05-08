@@ -46,17 +46,26 @@ Mount the filesystem using the provided Makefile:
 ~~~bash
 make mount_memefs
 ~~~
+OR you can mount the filesystem and view internal logging using the provided Makefile:
+~~~bash
+make debug
+~~~
 You can view the state of the bytes in the filesystem using the debugger script:
 ~~~bash
 ./memefs_debugger.sh myfilesystem.img
 ~~~
 You can unmount the filesystem using the provided Makefile:
-```bash
+~~~bash
 make unmount_memefs
-```
+~~~
 
 ## Testing Strategy
-[...]
+* Create files using `touch` and verify with `ls`
+* Write data using `echo >` and read with `cat` to confirm contents
+* Append data using `echo >>` and verify the full contents
+* Delete files with rm and ensure they are removed from directory listings
+* Use internal logging to monitor operation success and failures
+* Use the provided bash script `memefs_debugger.sh` to inspect raw disk image data for consistency.
 
 ## Troubleshooting
 ### Known Issues
