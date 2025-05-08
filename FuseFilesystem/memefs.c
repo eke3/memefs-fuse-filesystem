@@ -359,12 +359,12 @@ static int memefs_write(const char* path, const char* buf, size_t size, off_t of
     switch (write_type) {
         case OVERWRITE:
             if (overwrite_file(&directory[i], buf, size, offset) != 0) {
-                return -EIO;
+                return -ENOSPC;
             }
             break;
         case APPEND:
-            if (append_file(&directory[i], buf, size, offset) != 0) {
-                return -EIO;
+            if (append_file(&directory[i], buf, size) != 0) {
+                return -ENOSPC;
             }
             break;
         // OPTIONAL case Zero Fill Append when offset > file size
@@ -406,7 +406,7 @@ static int memefs_write(const char* path, const char* buf, size_t size, off_t of
     if (unload_image() != 0) {
         fprintf(stderr, "Failed to update image\n");
     }
-    return 0;
+    return (int)size;
 }
 
 static int memefs_truncate(const char* path, off_t new_size, struct fuse_file_info* fi) {

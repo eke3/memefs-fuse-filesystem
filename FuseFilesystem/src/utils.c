@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <stdio.h>
 #include <ctype.h>
+#include <stdbool.h>
 
 #include "define.h"
 
@@ -140,92 +141,100 @@ int overwrite_file(const memefs_file_entry_t* file_entry, const char* buf, size_
 
 }
 
-int append_file(const memefs_file_entry_t* file_entry, const char* buf, size_t size, off_t offset) {
-    (void) offset;
-
-    printf("Buffer: ");
-    for (int j = 0; j < size; j++) {
-        printf("%c", buf[j]);
-    }
-    printf("\n");
-
-    // TODO: check if there is enough space to write, return -ENOSPC
-
-
-    int last_full_fat_block, last_data_byte;
-    int curr_block, prev_block;
-    size_t space_to_write_in_block;
-    off_t buffer_offset;
+int append_file(const memefs_file_entry_t* file_entry, const char* buf, size_t size) {
+    uint16_t fat_start_index = file_entry->start_block; // starting block INDEX
+    uint16_t last_block_index = fat_start_index;
+    int space_to_write;
+    int append_start_index;
+    int curr_blk_index;
     int i;
+    off_t buffer_offset;
+    size_t total_bytes_available;
+    bool is_first_block;
 
-    last_full_fat_block = (int)(file_entry->size / BLOCK_SIZE);
-    last_data_byte = (int)(file_entry->size % BLOCK_SIZE);
-
-    curr_block = file_entry->start_block;
-    prev_block = curr_block;
-
-    while (last_full_fat_block > 0) {
-        prev_block = curr_block;
-        curr_block = main_fat[curr_block];
-        last_full_fat_block--;
-    }
-
-    uint8_t* start; // start writing data from here
-    start = &user_data[(prev_block * BLOCK_SIZE) + last_data_byte];
-    space_to_write_in_block = BLOCK_SIZE - last_data_byte;
-
-    buffer_offset = 0;
-
-    // while size of data to copy is greater than the space left in current block:
-
-    // copy data to fill current block
-    // make and link new fat entry with
-    // reset space_to_write_in_block to BLOCK_SIZE
-    // reduce size by number of bytes just written
-    // move start pos to beginning of new block
-
-    // once size is less than or equal to space left in block:
-    // copy data to fill as much of current block as needed (size)
-    // make and link new fat entry
-
-    // return 0
-
-    while (size > space_to_write_in_block) {
-        fprintf(stderr, "\n\nsize > space_to_write_in_block\nsize = %ld, space_to_write_in_block = %ld\n\n", size, space_to_write_in_block);
-        
-        memcpy(start, buf + buffer_offset, space_to_write_in_block);
-        for (i = 0; i < MAX_FAT_ENTRIES; i++) {
-            if (main_fat[i] == 0x0000) {
-                int new_block = i;
-        
-                // Link previous block to new block in FAT.
-                prev_block = curr_block;
-                main_fat[prev_block] = new_block;
-                backup_fat[prev_block] = new_block;
-        
-                // Mark new block as end of chain.
-                main_fat[new_block] = 0xFFFF;
-                backup_fat[new_block] = 0xFFFF;
-        
-                prev_block = curr_block;
-                curr_block = new_block;
-                break;
-            }
+    // check if there is enough space
+    // count empty fat blocks
+    total_bytes_available = (BLOCK_SIZE - (file_entry->size % BLOCK_SIZE));
+    for (i = 0; i < MAX_FAT_ENTRIES; i++) {
+        if (main_fat[i] == 0x0000) {
+            total_bytes_available += BLOCK_SIZE;
         }
+    }
+
+    // check if there is enough space on the disk to compleete the write
+    printf("Total bytes available: %d\n", total_bytes_available);
+    printf("Size: %zu\n", size);
+    if (size > total_bytes_available) {
+        return -ENOSPC;
+    }
+
+
+
+    printf("\n\n\nBuffer: %s\n\n\n", buf);
+    printf("Size: %zu\n", size);
+
+
+
+    while (main_fat[last_block_index] != 0xFFFF) {
+        last_block_index = main_fat[last_block_index];
+    }
+    // now i have the index of the last fat block used. go to the START of the corresponding data block, which is this index * 512. Then add whatever is leftover from size % 512 to get the FIRST index of the data block to write to.
+    append_start_index = (last_block_index * BLOCK_SIZE) + (file_entry->size % BLOCK_SIZE);
+    // start at data[append_start_index]
+    space_to_write = ((int)size < (BLOCK_SIZE - (file_entry->size % BLOCK_SIZE))) ? size : (BLOCK_SIZE - (file_entry->size % BLOCK_SIZE));
+
+    is_first_block = true;
+    buffer_offset = 0;
+    while ((int)size > 0) {
+
+        if (is_first_block) {
+            space_to_write = ((int)size < (BLOCK_SIZE - (file_entry->size % BLOCK_SIZE))) ? size : (BLOCK_SIZE - (file_entry->size % BLOCK_SIZE));
+            is_first_block = false;
+        } else {
+            space_to_write = ((int)size < BLOCK_SIZE) ? size : BLOCK_SIZE;
+        }
+        // fill the space in current block
+        printf("string at buf+buffer_offset: %.*s\n", space_to_write, buf + buffer_offset);
         
-        buffer_offset += space_to_write_in_block;
-        size -= space_to_write_in_block;
-        space_to_write_in_block = BLOCK_SIZE;
-        start = &user_data[curr_block * BLOCK_SIZE];       
+        printf("space_to_write: %d\n", space_to_write);
+        memset(user_data + append_start_index, '\0', space_to_write);
+        memcpy(user_data + append_start_index, buf + buffer_offset, space_to_write);
+        printf("size before decrment: %d\n", (int)size);
+
+        size -= space_to_write;
+        printf("size after decrement: %d\n", (int)size);
+
+        buffer_offset += space_to_write;
+
+        if ((int)size > 0) {
+            // add a new fat block to the chain, updating last_block_index
+            for (curr_blk_index = 0; curr_blk_index < MAX_FAT_ENTRIES; curr_blk_index++) {
+                if (main_fat[curr_blk_index] == 0x0000) {
+                    main_fat[last_block_index] = curr_blk_index;
+                    main_fat[curr_blk_index] = 0xFFFF;
+                    last_block_index = curr_blk_index;
+                    break;
+                }
+            }
+
+        
+        // reset append_start_index to (last_block_index * BLOCK_SIZE)
+        append_start_index = last_block_index * BLOCK_SIZE;
+        // reduce size by space_to_write
+        // printf("size before decrment: %d\n", (int)size);
+        
+        // size -= space_to_write;
+        // printf("size after decrement: %d\n", (int)size);
+        // move buffer_offset by space_to_write
+        // buffer_offset += space_to_write;
+        // reset space_to_write to 512
+        // space_to_write = ((int)size < (BLOCK_SIZE - (file_entry->size % BLOCK_SIZE))) ? size : (BLOCK_SIZE - (file_entry->size % BLOCK_SIZE));
+        }
+
+
+
     }
 
-    fprintf(stderr, "\n\nsize <= space_to_write_in_block\nsize = %ld, space_to_write_in_block = %ld\n\n", size, space_to_write_in_block);
-    memcpy(start, buf + buffer_offset, size);
 
-    printf("Wrote: ");
-    for (int j = 0; j < size; j++) {
-        printf("%c", *(start + j));
-    }
-    printf("\n");
     return 0;
 }

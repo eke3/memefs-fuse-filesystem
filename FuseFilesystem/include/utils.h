@@ -20,6 +20,6 @@ int check_legal_name(const char* filename);
 void name_to_readable(const char* name, char* readable_name);
 void name_to_encoded(const char* readable_name, char* encoded_name);
 int overwrite_file(const memefs_file_entry_t* file_entry, const char* buf, size_t size, off_t offset);
-int append_file(const memefs_file_entry_t* file_entry, const char* buf, size_t size, off_t offset);
+int append_file(const memefs_file_entry_t* file_entry, const char* buf, size_t size);
 
 #endif // UTILS_H
