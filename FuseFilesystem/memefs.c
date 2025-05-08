@@ -234,7 +234,8 @@ static int memefs_open(const char* path, struct fuse_file_info* fi) {
 
 static int memefs_read(const char* path, char* buf, size_t size, off_t offset, struct fuse_file_info* fi) {
 
-    
+    // choosing to ignore offset for partial reads
+    (void) offset;
     /* 
     
     TODO: don't think this works
@@ -266,23 +267,38 @@ static int memefs_read(const char* path, char* buf, size_t size, off_t offset, s
         return -ENOENT;
     }
 
-    // read file data
-    for (done = 0, buffer_offset = 0, bytes_read = 0; !done; curr_block = main_fat[curr_block]) {
-        // for current, loop one byte at a time copying block to buffer
-        for (i = 0; i < BLOCK_SIZE; i++) {
-            if (bytes_read == file_size) {
-                done = 1;
-                break;
-            }
-            memcpy(buf + buffer_offset, &user_data[curr_block * BLOCK_SIZE], 1);
-            buffer_offset++;
-            bytes_read++;
+    // if (offset >= file_size) {
+    //     // Offset past end of file.
+    //     return 0;
+    // }
+
+    // Adjust size if reading beyond EOF
+    if (size > file_size) {
+        // size is max total read size to buffer
+        size = file_size;
+    }
+
+
+    // number of bytes_to_read should either be 512, the number of spaces left in the block, or (file_size % 512)
+    
+    int bytes_to_read = 0;
+
+    while (size > 0) {
+        if (size > BLOCK_SIZE) {
+            bytes_to_read = BLOCK_SIZE;
+        } else {
+            bytes_to_read = size;
         }
 
-        // check if reached end of file
+        memcpy(buf + buffer_offset, &user_data[curr_block * BLOCK_SIZE], bytes_to_read);
+        buffer_offset += bytes_to_read;
+        size -= bytes_to_read;
+        bytes_read += bytes_to_read;
+        // how many bytes to read are there in the current block?
         if (main_fat[curr_block] == 0xFFFF) {
-            done = 1;
+            break;
         }
+        curr_block = main_fat[curr_block];
     }
 
     // points to start block in fat 

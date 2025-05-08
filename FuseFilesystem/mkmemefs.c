@@ -114,7 +114,7 @@ static void fill_superblock(const char *volname)
     sb->directory_start = htons(253);
     sb->directory_size = htons(14); 
     sb->num_user_blocks = htons(220);
-    sb->first_user_block = htons(1);
+    sb->first_user_block = htons(19);
 
     if (volname)
         strncpy(sb->volume_label, volname, 16); // Sets volume label if provided.
