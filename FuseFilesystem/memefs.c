@@ -243,7 +243,7 @@ static int memefs_read(const char* path, char* buf, size_t size, off_t offset, s
     */
 
 
-    (void) size;
+    (int) size;
     (void) offset;
     (void) fi;
     char readable_filename[MAX_READABLE_FILENAME_LENGTH];
@@ -258,6 +258,8 @@ static int memefs_read(const char* path, char* buf, size_t size, off_t offset, s
             // Found file entry.
             curr_block = directory[i].start_block;
             file_size = directory[i].size;
+            fprintf(stderr, "\n\n\nFound file with start index %d and size %d\n\n\n", curr_block, file_size);
+            
             break;
         }
     }
@@ -278,28 +280,41 @@ static int memefs_read(const char* path, char* buf, size_t size, off_t offset, s
         size = file_size;
     }
 
+    fprintf(stderr, "\n\nsize: %zu\n\n", size);
 
     // number of bytes_to_read should either be 512, the number of spaces left in the block, or (file_size % 512)
     
     int bytes_to_read = 0;
-
-    while (size > 0) {
+    bytes_read = 0;
+    buffer_offset = 0;
+    // read data from fat into buffer
+    while ((int)size > 0) {
         if (size > BLOCK_SIZE) {
             bytes_to_read = BLOCK_SIZE;
         } else {
             bytes_to_read = size;
         }
+        fprintf(stderr, "\n\ngoing to read %d bytes\n\n", bytes_to_read);
+        
 
         memcpy(buf + buffer_offset, &user_data[curr_block * BLOCK_SIZE], bytes_to_read);
         buffer_offset += bytes_to_read;
         size -= bytes_to_read;
         bytes_read += bytes_to_read;
-        // how many bytes to read are there in the current block?
+        fprintf(stderr, "\n\nread %d bytes\n\n", bytes_read);
+        
+        fprintf(stderr, "\n\nmain_fat[%d] = 0x%04X\n\n", curr_block, main_fat[curr_block]);
+        
+    //     // how many bytes to read are there in the current block?
         if (main_fat[curr_block] == 0xFFFF) {
+            fprintf(stderr, "no subsequent fat blocks to read\n");
+
             break;
+        } else {
+            curr_block = main_fat[curr_block];
         }
-        curr_block = main_fat[curr_block];
     }
+
 
     // points to start block in fat 
 
