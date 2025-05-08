@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-// Structure representing the superblock metadata for the filesystem.
+// Struct representing superblock metadata for the filesystem.
 typedef struct memefs_superblock {
     char signature[16];        // Filesystem signature
     uint8_t cleanly_unmounted; // Flag for unmounted state

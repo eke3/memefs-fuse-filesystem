@@ -1,80 +1,62 @@
 // File:    memefs.c
 // Author:  Eric Ekey
 // Date:    04/27/2025
-// Desc:    
+// Desc:    Implementation of the memefs filesystem.
 
-#include <stdio.h>
-#include <unistd.h>
-#include <string.h>
-#include <errno.h>
 #include <arpa/inet.h>
+#include <errno.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
 
+#include "define.h"
+#include "loaders.h"
 #include "memefs_file_entry.h"
 #include "memefs_superblock.h"
-#include "define.h"
 #include "utils.h"
 
 #pragma region Globals
 
+extern int img_fd;
 extern memefs_superblock_t main_superblock;
 extern memefs_superblock_t backup_superblock;
 extern memefs_file_entry_t directory[MAX_FILE_ENTRIES];
 extern uint16_t main_fat[MAX_FAT_ENTRIES];
-
-/* 
-
-    NOTE: when do we use backup fat? theres no indicator for if its corrupted
-
-*/
-
 extern uint16_t backup_fat[MAX_FAT_ENTRIES];
 extern uint8_t user_data[USER_DATA_NUM_BLOCKS * BLOCK_SIZE];
-extern int img_fd;
 
 #pragma endregion Globals
 
 #pragma region FUSE Prototypes
 
 // FUSE operations.
+static int memefs_create(const char *path, mode_t mode, struct fuse_file_info *fi);
+static void memefs_destroy(void* private_data);
 static int memefs_getattr(const char* path, struct stat* stbuf, struct fuse_file_info* fi);
-static int memefs_readdir(const char* path, void* buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info* fi, enum fuse_readdir_flags flags);
 static int memefs_open(const char* path, struct fuse_file_info* fi);
 static int memefs_read(const char* path, char* buf, size_t size, off_t offset, struct fuse_file_info* fi);
-static int memefs_create(const char *path, mode_t mode, struct fuse_file_info *fi);
-static int memefs_utimens(const char *path, const struct timespec ts[2], struct fuse_file_info *fi);
-static int memefs_unlink(const char *path);
-static int memefs_write(const char* path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi);
+static int memefs_readdir(const char* path, void* buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info* fi, enum fuse_readdir_flags flags);
 static int memefs_truncate(const char* path, off_t new_size, struct fuse_file_info* fi);
-static void memefs_destroy(void* private_data);
+static int memefs_unlink(const char *path);
+static int memefs_utimens(const char *path, const struct timespec ts[2], struct fuse_file_info *fi);
+static int memefs_write(const char* path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi);
 
 #pragma endregion FUSE Prototypes
 
-#pragma region Helpers
-// Helper functions for loading and unloading data from the filesystem image.
-extern int load_image();
-extern int unload_image();
-
-// Utility functions
-extern double myCeil(double num);
-extern void name_to_readable(const char* name, char* readable_name);
-extern void name_to_encoded(const char* readable_name, char* encoded_name);
-extern int check_legal_name(const char* filename);
-
-#pragma endregion Helpers
-
 #pragma region FUSE Implementations
 
-static struct fuse_operations memefs_oper = {
-    .getattr = memefs_getattr,
-    .readdir = memefs_readdir,
-    .open    = memefs_open,
-    .read    = memefs_read,
-    .create  = memefs_create,
-    .utimens = memefs_utimens,
-    .unlink  = memefs_unlink,
-    .write = memefs_write,
+// FUSE operations.
+static const struct fuse_operations memefs_oper = {
+    .create   = memefs_create,
+    .destroy  = memefs_destroy,
+    .getattr  = memefs_getattr,
+    .open     = memefs_open,
+    .read     = memefs_read,
+    .readdir  = memefs_readdir,
     .truncate = memefs_truncate,
-    .destroy = memefs_destroy,
+    .unlink   = memefs_unlink,
+    .utimens  = memefs_utimens,
+    .write    = memefs_write,
 };
 
 static int memefs_create(const char* path, mode_t mode, struct fuse_file_info* fi) {
@@ -91,9 +73,7 @@ static int memefs_create(const char* path, mode_t mode, struct fuse_file_info* f
 
     for (i = 0; i < MAX_FILE_ENTRIES; i++) {
         name_to_readable(directory[i].filename, readable_filename);
-        // fprintf(stderr, "\n\npath: %s\ncurrent filename: %s\n\n", path+1, readable_filename);
         if ((strcmp(readable_filename, path + 1) == 0) && (directory[i].type_permissions != 0x0000)) {
-            fprintf(stderr, "\n\n\nFILE ALREADY EXISTS: %s permissions: %d\n\n\n", readable_filename, (int)directory[i].type_permissions);
             // File already exists.
             return -EEXIST;
         }
@@ -101,12 +81,9 @@ static int memefs_create(const char* path, mode_t mode, struct fuse_file_info* f
 
     for (i = 0; i < MAX_FILE_ENTRIES; i++) {
         if (directory[i].type_permissions == 0x0000) {
-            fprintf(stderr, "\n\n\nFree file entry at index %d\n\n\n", i);
             // Found free file entry in directory.
             for (j = 0; j < MAX_FAT_ENTRIES; j++) {
                 if (main_fat[j] == 0x0000) {
-                    fprintf(stderr, "\n\n\nUsing Free file entry at index %d\n\n\n", i);
-
                     // Found free FAT entry.
                     name_to_encoded(path + 1, encoded_filename);
                     memcpy(directory[i].filename, encoded_filename, 11);
@@ -120,7 +97,6 @@ static int memefs_create(const char* path, mode_t mode, struct fuse_file_info* f
                     main_fat[j] = (uint16_t)0xFFFF;
                     backup_fat[j] = (uint16_t)0xFFFF;
                     name_to_readable(directory[i].filename, readable_filename);
-                    fprintf(stderr, "\n\n\n[%d] CREATED FILE: %s with permissions: %d\n\n\n", i, readable_filename, (int)directory[i].type_permissions);
                     if (unload_image() != 0) {
                         fprintf(stderr, "Failed to update image\n");
                     }
@@ -133,11 +109,20 @@ static int memefs_create(const char* path, mode_t mode, struct fuse_file_info* f
     return -ENOSPC;
 }
 
-static int memefs_utimens(const char* path, const struct timespec tv[2], struct fuse_file_info* fi) {
-    (void) path;
-    (void) tv;
-    (void) fi;
-    return 0;
+static void memefs_destroy(void* private_data) {
+    (void) private_data;
+
+    if (unload_image() != 0) {
+        fprintf(stderr, "Failed to copy filesystem to image\n");
+    }
+    main_superblock.cleanly_unmounted = 0x00;
+    backup_superblock.cleanly_unmounted = 0x00;
+
+    // Close the image file descriptor
+    if (img_fd >= 0) {
+        close(img_fd);
+        img_fd = -1;
+    }
 }
 
 static int memefs_getattr(const char* path, struct stat* stbuf, struct fuse_file_info* fi) {
@@ -156,28 +141,100 @@ static int memefs_getattr(const char* path, struct stat* stbuf, struct fuse_file
 
     for (i = 0; i < MAX_FILE_ENTRIES; i++) {
         name_to_readable(directory[i].filename, readable_filename);
-        fprintf(stderr, "\n[%d]: %s\t%o\n", i, readable_filename, directory[i].type_permissions);
-
         if ((strcmp(readable_filename, path + 1) == 0) && (directory[i].type_permissions != 0x0000) && (check_legal_name(readable_filename) == 0)) {
             // Found file.
-            fprintf(stderr, "\n\n\n[%d] FOUND FILE WITH NAME: %sPERMISSIONS: %o\n\n\n", i, readable_filename, directory[i].type_permissions);
             stbuf->st_mode = (mode_t)(S_IFREG | 0777);
             stbuf->st_nlink = (nlink_t)1;
             stbuf->st_uid = (uid_t)directory[i].uid_owner;
             stbuf->st_gid = (gid_t)directory[i].gid_owner;
             stbuf->st_size = (off_t)directory[i].size;
-            stbuf->st_mtime = (time_t)directory[i].bcd_timestamp;
-            /*
-            
-            TODO: see if this is necessary
-            
-            */
-            // stbuf->st_blocks = (blkcnt_t)((directory[i].size + 511) / 512);
+            stbuf->st_mtime = memefs_bcd_to_time(directory[i].bcd_timestamp);
+            stbuf->st_blocks = (blkcnt_t)((directory[i].size + 511) / BLOCK_SIZE);
             return 0;
         }
     }
 
     return -ENOENT;
+}
+
+static int memefs_open(const char* path, struct fuse_file_info* fi) {
+    (void) fi;
+    char readable_filename[MAX_READABLE_FILENAME_LENGTH];
+    int i;
+
+    for (i = 0; i < MAX_FILE_ENTRIES; i++) {
+        name_to_readable(directory[i].filename, readable_filename);
+        if ((strcmp(readable_filename, path + 1) == 0) && (directory[i].type_permissions != 0x0000) && (check_legal_name(readable_filename) == 0)) {
+            // Found file entry.
+            return 0;
+        }
+    }
+    
+    if (strcmp(path, "/") == 0) {
+        // Found root directory.
+        return 0;
+    }
+
+    return -ENOENT;
+}
+
+static int memefs_read(const char* path, char* buf, size_t size, off_t offset, struct fuse_file_info* fi) {
+    (void) offset;
+    (void) fi;
+    char readable_filename[MAX_READABLE_FILENAME_LENGTH];
+    int i, curr_block, bytes_read;
+    uint32_t file_size;
+    size_t bytes_to_read;
+    off_t buffer_offset;
+
+    // Locate file in directory
+    for (i = 0, curr_block = 0xFFFF; i < MAX_FILE_ENTRIES; i++) {
+        name_to_readable(directory[i].filename, readable_filename);
+        if ((strcmp(readable_filename, path + 1) == 0) && (directory[i].type_permissions != 0x0000) && (check_legal_name(readable_filename) == 0)) {
+            // Found file entry.
+            curr_block = directory[i].start_block;
+            file_size = directory[i].size;
+            break;
+        }
+    }
+
+    if (curr_block == 0xFFFF) {
+        // File not found.
+        return -ENOENT;
+    }
+
+    // Adjust size if reading beyond EOF
+    if (size > (size_t)file_size) {
+        // size is max total read size to buffer
+        size = file_size;
+    }
+
+    bytes_to_read = 0;
+    bytes_read = 0;
+    buffer_offset = 0;
+
+    // Copy data from fat into buffer.
+    while ((int)size > 0) {
+        if (size > BLOCK_SIZE) {
+            bytes_to_read = BLOCK_SIZE;
+        } else {
+            bytes_to_read = size;
+        }        
+
+        memcpy(buf + buffer_offset, &user_data[curr_block * BLOCK_SIZE], bytes_to_read);
+        buffer_offset += bytes_to_read;
+        size -= bytes_to_read;
+        bytes_read += bytes_to_read;
+        
+        if (main_fat[curr_block] == 0xFFFF) {
+            // End of FAT chain.
+            break;
+        } else {
+            curr_block = main_fat[curr_block];
+        }
+    }
+
+    return bytes_read;
 }
 
 static int memefs_readdir(const char* path, void* buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info* fi, enum fuse_readdir_flags flags) {
@@ -207,237 +264,6 @@ static int memefs_readdir(const char* path, void* buf, fuse_fill_dir_t filler, o
     }
 
     return 0;
-}
-
-static int memefs_open(const char* path, struct fuse_file_info* fi) {
-    (void) fi;
-    char readable_filename[MAX_READABLE_FILENAME_LENGTH];
-    int i;
-
-    for (i = 0; i < MAX_FILE_ENTRIES; i++) {
-        name_to_readable(directory[i].filename, readable_filename);
-        fprintf(stderr, "\n\npath: %s\nreadable_filename: %s\n permissions: %o\n", path + 1, readable_filename, directory[i].type_permissions);
-        if ((strcmp(readable_filename, path + 1) == 0) && (directory[i].type_permissions != 0x0000) && (check_legal_name(readable_filename) == 0)) {
-            // Found file entry.
-            fprintf(stderr, "\n\n\nFOUND EXISTING FILE: %s\n\n\n", readable_filename);
-            return 0;
-        }
-    }
-    
-    if (strcmp(path, "/") == 0) {
-        // Found root directory.
-        return 0;
-    }
-
-    return -ENOENT;
-}
-
-static int memefs_read(const char* path, char* buf, size_t size, off_t offset, struct fuse_file_info* fi) {
-
-    // choosing to ignore offset for partial reads
-    (void) offset;
-    /* 
-    
-    TODO: don't think this works
-    
-    */
-
-
-    (int) size;
-    (void) offset;
-    (void) fi;
-    char readable_filename[MAX_READABLE_FILENAME_LENGTH];
-    int i, curr_block, done;
-    uint32_t file_size, bytes_read;
-    off_t buffer_offset;
-
-    // locate file in directory
-    for (i = 0, curr_block = 0xFFFF; i < MAX_FILE_ENTRIES; i++) {
-        name_to_readable(directory[i].filename, readable_filename);
-        if ((strcmp(readable_filename, path + 1) == 0) && (directory[i].type_permissions != 0x0000) && (check_legal_name(readable_filename) == 0)) {
-            // Found file entry.
-            curr_block = directory[i].start_block;
-            file_size = directory[i].size;
-            fprintf(stderr, "\n\n\nFound file with start index %d and size %d\n\n\n", curr_block, file_size);
-            
-            break;
-        }
-    }
-
-    if (curr_block == 0xFFFF) {
-        // File not found.
-        return -ENOENT;
-    }
-
-    // if (offset >= file_size) {
-    //     // Offset past end of file.
-    //     return 0;
-    // }
-
-    // Adjust size if reading beyond EOF
-    if (size > file_size) {
-        // size is max total read size to buffer
-        size = file_size;
-    }
-
-    fprintf(stderr, "\n\nsize: %zu\n\n", size);
-
-    // number of bytes_to_read should either be 512, the number of spaces left in the block, or (file_size % 512)
-    
-    int bytes_to_read = 0;
-    bytes_read = 0;
-    buffer_offset = 0;
-    // read data from fat into buffer
-    while ((int)size > 0) {
-        if (size > BLOCK_SIZE) {
-            bytes_to_read = BLOCK_SIZE;
-        } else {
-            bytes_to_read = size;
-        }
-        fprintf(stderr, "\n\ngoing to read %d bytes\n\n", bytes_to_read);
-        
-
-        memcpy(buf + buffer_offset, &user_data[curr_block * BLOCK_SIZE], bytes_to_read);
-        buffer_offset += bytes_to_read;
-        size -= bytes_to_read;
-        bytes_read += bytes_to_read;
-        fprintf(stderr, "\n\nread %d bytes\n\n", bytes_read);
-        
-        fprintf(stderr, "\n\nmain_fat[%d] = 0x%04X\n\n", curr_block, main_fat[curr_block]);
-        
-    //     // how many bytes to read are there in the current block?
-        if (main_fat[curr_block] == 0xFFFF) {
-            fprintf(stderr, "no subsequent fat blocks to read\n");
-
-            break;
-        } else {
-            curr_block = main_fat[curr_block];
-        }
-    }
-
-
-    // points to start block in fat 
-
-    // add data at start block to buffer
-
-    // go to next block
-
-    // append data to buffer
-
-    // continue until 0xffff
-
-    // return number of bytes in the buffer 
-
-    return bytes_read;
-}
-
-static int memefs_unlink(const char* path) {
-    char readable_filename[MAX_READABLE_FILENAME_LENGTH];
-    int i;
-    uint16_t curr_block, next_block;
-
-    // Find file in directory.
-    for (i = 0, curr_block = 0xFFFF; i < MAX_FILE_ENTRIES; i++) {
-        name_to_readable(directory[i].filename, readable_filename);
-        if ((strcmp(readable_filename, path + 1) == 0) && (directory[i].type_permissions != 0x0000) && (check_legal_name(readable_filename) == 0)) {
-            // Found file entry.
-            curr_block = directory[i].start_block;
-            break;
-        }
-    }
-
-    if (curr_block == 0xFFFF) {
-        // File not found.
-        return -ENOENT;
-    }
-
-    // Unlink file from FAT.
-    for (next_block = 0xFFFF; curr_block != 0xFFFF; curr_block = next_block) {
-        next_block = main_fat[curr_block];
-        main_fat[curr_block] = 0x0000;
-        backup_fat[curr_block] = 0x0000;
-    }
-    directory[i].type_permissions = 0x0000;
-
-    if (unload_image() != 0) {
-        fprintf(stderr, "Failed to update image\n");
-    }
-    return 0;
-}
-
-static int memefs_write(const char* path, const char* buf, size_t size, off_t offset, struct fuse_file_info* fi) {
-    (void) fi;
-    char readable_filename[MAX_READABLE_FILENAME_LENGTH];
-    write_type_t write_type;
-    int i;
-
-    write_type = INVALID;
-    for (i = 0; i < MAX_FILE_ENTRIES; i++) {
-        name_to_readable(directory[i].filename, readable_filename);
-        if ((strcmp(readable_filename, path + 1) == 0) && (directory[i].type_permissions != 0x0000) && (check_legal_name(path + 1) == 0)) {
-            // Found file.
-            if (offset < directory[i].size) {
-                write_type = OVERWRITE;
-                break;
-            } else if (offset == directory[i].size) {
-                write_type = APPEND;
-                fprintf(stderr, "\n\nAPPEND\n\n");
-                break;
-            }
-        }
-    }
-
-    switch (write_type) {
-        case OVERWRITE:
-            if (overwrite_file(&directory[i], buf, size, offset) != 0) {
-                return -ENOSPC;
-            }
-            break;
-        case APPEND:
-            if (append_file(&directory[i], buf, size) != 0) {
-                return -ENOSPC;
-            }
-            break;
-        // OPTIONAL case Zero Fill Append when offset > file size
-        case INVALID:
-            return -ENOENT;
-    }
-    fprintf(stderr, "\n\nOLD SIZE: %d\n\n", (int)directory[i].size);
-    directory[i].size = offset + size;
-    fprintf(stderr, "\n\nNEW SIZE: %d\n\n", (int)directory[i].size);
-            
-    generate_memefs_timestamp(directory[i].bcd_timestamp);
-
-
-    
-
-    
-    /*
-    
-    NOTE: i think some of this is for truncate
-    what is truncate :(
-
-
-    find file entry
-
-    use fat to get to file data blocks
-        consider offset. for every 512, jump to next fat reference
-        then look at that data block and navigate to offset based on remainder
-        start writing. if you hit the end of the block, search for an open data block and continue writing there
-            add new data block to fat chain
-        track bytes written. add to size? or recount?
-
-    write data at offset, maybe extend file
-
-    allocate new blocks if needed, track by adding to fat
-
-    update size and timestamp in directory entry
-    
-    */
-    if (unload_image() != 0) {
-        fprintf(stderr, "Failed to update image\n");
-    }
-    return (int)size;
 }
 
 static int memefs_truncate(const char* path, off_t new_size, struct fuse_file_info* fi) {
@@ -532,6 +358,7 @@ static int memefs_truncate(const char* path, off_t new_size, struct fuse_file_in
     }
 
     // Update file size.
+    generate_memefs_timestamp(directory[h].bcd_timestamp);
     directory[h].size = (uint32_t)new_size;
     if (unload_image() != 0) {
         fprintf(stderr, "Failed to update image\n");
@@ -539,20 +366,89 @@ static int memefs_truncate(const char* path, off_t new_size, struct fuse_file_in
     return 0;
 }
 
-static void memefs_destroy(void* private_data) {
-    (void) private_data;
+static int memefs_unlink(const char* path) {
+    char readable_filename[MAX_READABLE_FILENAME_LENGTH];
+    int i;
+    uint16_t curr_block, next_block;
+
+    // Find file in directory.
+    for (i = 0, curr_block = 0xFFFF; i < MAX_FILE_ENTRIES; i++) {
+        name_to_readable(directory[i].filename, readable_filename);
+        if ((strcmp(readable_filename, path + 1) == 0) && (directory[i].type_permissions != 0x0000) && (check_legal_name(readable_filename) == 0)) {
+            // Found file entry.
+            curr_block = directory[i].start_block;
+            break;
+        }
+    }
+
+    if (curr_block == 0xFFFF) {
+        // File not found.
+        return -ENOENT;
+    }
+
+    // Unlink file from FAT.
+    for (next_block = 0xFFFF; curr_block != 0xFFFF; curr_block = next_block) {
+        next_block = main_fat[curr_block];
+        main_fat[curr_block] = 0x0000;
+        backup_fat[curr_block] = 0x0000;
+    }
+    directory[i].type_permissions = 0x0000;
 
     if (unload_image() != 0) {
-        fprintf(stderr, "Failed to copy filesystem to image\n");
+        fprintf(stderr, "Failed to update image\n");
     }
-    main_superblock.cleanly_unmounted = 0x00;
-    backup_superblock.cleanly_unmounted = 0x00;
+    return 0;
+}
 
-    // Close the image file descriptor
-    if (img_fd >= 0) {
-        close(img_fd);
-        img_fd = -1;
+static int memefs_utimens(const char* path, const struct timespec tv[2], struct fuse_file_info* fi) {
+    (void) path;
+    (void) tv;
+    (void) fi;
+    return 0;
+}
+
+static int memefs_write(const char* path, const char* buf, size_t size, off_t offset, struct fuse_file_info* fi) {
+    (void) fi;
+    char readable_filename[MAX_READABLE_FILENAME_LENGTH];
+    write_type_t write_type;
+    int i;
+
+    write_type = INVALID;
+    for (i = 0; i < MAX_FILE_ENTRIES; i++) {
+        name_to_readable(directory[i].filename, readable_filename);
+        if ((strcmp(readable_filename, path + 1) == 0) && (directory[i].type_permissions != 0x0000) && (check_legal_name(path + 1) == 0)) {
+            // Found file.
+            if (offset < directory[i].size) {
+                write_type = OVERWRITE;
+                break;
+            } else if (offset == directory[i].size) {
+                write_type = APPEND;
+                break;
+            }
+        }
     }
+
+    switch (write_type) {
+        case OVERWRITE:
+            if (overwrite_file(&directory[i], buf, size) != 0) {
+                return -ENOSPC;
+            }            
+            break;
+        case APPEND:
+            if (append_file(&directory[i], buf, size) != 0) {
+                return -ENOSPC;
+            }
+            break;
+        case INVALID:
+            return -ENOENT;
+    }
+    directory[i].size += size;
+            
+    generate_memefs_timestamp(directory[i].bcd_timestamp);
+    if (unload_image() != 0) {
+        fprintf(stderr, "Failed to update image\n");
+    }
+    return (int)size;
 }
 
 #pragma endregion FUSE Implementations

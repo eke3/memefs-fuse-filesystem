@@ -5,7 +5,7 @@
 
 #include "define.h"
 
-// Structure representing a file entry in the directory.
+// Struct representing a file entry in the directory.
 typedef struct memefs_file_entry {
     uint16_t type_permissions; // File type and permissions
     uint16_t start_block;      // Starting block number
