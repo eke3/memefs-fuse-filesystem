@@ -1,22 +1,23 @@
 # CMSC 421 Project 4
 
-
 ## Introduction
 **Platforms** - Linux
 
+MEMEfs is a FUSE-based user-space filesystem that stores files using 32-byte data blocks and a simple block allocation strategy. It supports creating, reading, writing, and deleting files. File names are restricted to 8 character names and 3 character extensions. The filesystem directory has space for 224 files. The user data section has 220 blocks for storing user data. The filesystem uses a FAT to access user data. This project is a memefs FUSE filesystem implementation. It supports read and write operations on files stored within a disk image. The primary goal of this project is to gain experience with filesystem operations and secondary memory by managing files stored within a disk image file.
 
-This project is [...]. It supports [...]. The primary goals of this project include [...].
-
-
-### Features
-*
-*
-*
+### Supported FUSE Operations
+* `create` – Creates a new file in the filesystem
+* `destroy` – Unloads the file image from memory loses the file image on unmount
+* `getattr` – Retrieves file metadata such as size, permissions, and timestamps
+* `open` – Opens a file and validates its existence
+* `read` – Reads data from a file, respecting file size and bounds
+* `readdir` – Lists files in the root directory of the filesystem
+* `unlink` – Deletes a file
+* `write` – Writes data to a file, supporting overwrites and appends
 
 ### Extra Credit Features
-*
-*
-*
+* `truncate` – Changes the size of a file
+
 
 ## Contact
 * **Contributor** - Eric Ekey
@@ -34,7 +35,6 @@ Install up-to-date dependencies for building this program:
 sudo apt update
 sudo apt install fuse3 libfuse3-3 libfuse3-dev make
 ~~~
-
 
 ### Build and Compile
 Navigate to the `FuseFilesystem/` directory, write the filesystem image, and compile the memefs implementation using the Makefile:
@@ -55,19 +55,12 @@ You can unmount the filesystem using the provided Makefile:
 make unmount_memefs
 ```
 
-
 ## Testing Strategy
 [...]
-
-### Supported FUSE Operations
-*
-*
-*
 
 ## Troubleshooting
 ### Known Issues
 * Undiagnosed crash when user data becomes very long, approaching space limitations.
-
 
 ## References
 ### External Resources
