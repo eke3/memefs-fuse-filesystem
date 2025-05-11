@@ -46,20 +46,13 @@ int append_file(const memefs_file_entry_t* file_entry, const char* buf, size_t s
     int curr_blk_index;
     int i;
     off_t buffer_offset;
-    size_t total_bytes_available;
     bool is_first_block;
+    int free_fat_blocks;
 
-    // check if there is enough space
-    total_bytes_available = (BLOCK_SIZE - (file_entry->size % BLOCK_SIZE));
-    for (i = 0; i < MAX_FAT_ENTRIES; i++) {
+    for (i = 0, free_fat_blocks = 0; i < MAX_FAT_ENTRIES; i++) {
         if (main_fat[i] == 0x0000) {
-            total_bytes_available += BLOCK_SIZE;
+            free_fat_blocks++;
         }
-    }
-
-    // check if there is enough space on the disk to compleete the write
-    if (size > total_bytes_available) {
-        return -ENOSPC;
     }
 
     last_block_index = file_entry->start_block;
@@ -72,6 +65,11 @@ int append_file(const memefs_file_entry_t* file_entry, const char* buf, size_t s
     is_first_block = true;
     buffer_offset = 0;
     while ((int)size > 0) {
+        if (free_fat_blocks == 0) {
+            // No more free FAT blocks. Disk is full, cannot continue writing.
+            return -ENOSPC;
+        }
+
         if (is_first_block) {
             space_to_write = ((int)size < (BLOCK_SIZE - ((int)file_entry->size % BLOCK_SIZE))) ? size : (BLOCK_SIZE - (file_entry->size % BLOCK_SIZE));
             is_first_block = false;
@@ -94,6 +92,7 @@ int append_file(const memefs_file_entry_t* file_entry, const char* buf, size_t s
                     main_fat[curr_blk_index] = 0xFFFF;
                     backup_fat[curr_blk_index] = 0xFFFF;
                     last_block_index = curr_blk_index;
+                    free_fat_blocks--;
                     break;
                 }
             }
@@ -214,6 +213,7 @@ double myCeil(double num) {
         // Number is greater than the whole part.
         return whole_num + 1;
     }
+    
     return whole_num;
 }
 
