@@ -96,9 +96,9 @@ static int memefs_create(const char* path, mode_t mode, struct fuse_file_info* f
                     directory[i].size = (uint32_t)0;
                     main_fat[j] = (uint16_t)0xFFFF;
                     backup_fat[j] = (uint16_t)0xFFFF;
-                    name_to_readable(directory[i].filename, readable_filename);
                     if (unload_image() != 0) {
-                        fprintf(stderr, "Failed to update image\n");
+                        fprintf(stderr, "Failed to update image after create()\n");
+                        return -EIO;
                     }
                     return 0;
                 }
@@ -112,11 +112,11 @@ static int memefs_create(const char* path, mode_t mode, struct fuse_file_info* f
 static void memefs_destroy(void* private_data) {
     (void) private_data;
 
-    if (unload_image() != 0) {
-        fprintf(stderr, "Failed to copy filesystem to image\n");
-    }
     main_superblock.cleanly_unmounted = 0x00;
     backup_superblock.cleanly_unmounted = 0x00;
+    if (unload_image() != 0) {
+        fprintf(stderr, "Failed to update image after destroy()\n");
+    }
 
     // Close the image file descriptor
     if (img_fd >= 0) {
@@ -188,7 +188,7 @@ static int memefs_read(const char* path, char* buf, size_t size, off_t offset, s
     off_t buffer_offset;
 
     // Locate file in directory
-    for (i = 0, curr_block = 0xFFFF; i < MAX_FILE_ENTRIES; i++) {
+    for (i = 0, curr_block = -1; i < MAX_FILE_ENTRIES; i++) {
         name_to_readable(directory[i].filename, readable_filename);
         if ((strcmp(readable_filename, path + 1) == 0) && (directory[i].type_permissions != 0x0000) && (check_legal_name(readable_filename) == 0)) {
             // Found file entry.
@@ -198,22 +198,19 @@ static int memefs_read(const char* path, char* buf, size_t size, off_t offset, s
         }
     }
 
-    if (curr_block == 0xFFFF) {
+    if (curr_block == -1) {
         // File not found.
         return -ENOENT;
     }
 
     // Adjust size if reading beyond EOF
-    if (size > (size_t)file_size) {
-        // size is max total read size to buffer
-        size = file_size;
-    }
+    size = (size_t)MIN(size, file_size);
 
     bytes_to_read = 0;
     bytes_read = 0;
     buffer_offset = 0;
 
-    // Copy data from fat into buffer.
+    // Copy data from FAT into buffer.
     while ((int)size > 0) {
         if (size > BLOCK_SIZE) {
             bytes_to_read = BLOCK_SIZE;
@@ -361,7 +358,8 @@ static int memefs_truncate(const char* path, off_t new_size, struct fuse_file_in
     generate_memefs_timestamp(directory[h].bcd_timestamp);
     directory[h].size = (uint32_t)new_size;
     if (unload_image() != 0) {
-        fprintf(stderr, "Failed to update image\n");
+        fprintf(stderr, "Failed to unload image after truncate()\n");
+        return -EIO;
     }
     return 0;
 }
@@ -395,7 +393,8 @@ static int memefs_unlink(const char* path) {
     directory[i].type_permissions = 0x0000;
 
     if (unload_image() != 0) {
-        fprintf(stderr, "Failed to update image\n");
+        fprintf(stderr, "Failed to unload image after unlink()\n");
+        return -EIO;
     }
     return 0;
 }
@@ -446,7 +445,8 @@ static int memefs_write(const char* path, const char* buf, size_t size, off_t of
             
     generate_memefs_timestamp(directory[i].bcd_timestamp);
     if (unload_image() != 0) {
-        fprintf(stderr, "Failed to update image\n");
+        fprintf(stderr, "Failed to unload image after write()\n");
+        return -EIO;
     }
     return (int)size;
 }
