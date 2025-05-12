@@ -13,7 +13,7 @@ MEMEfs is a FUSE-based user-space filesystem that stores files using 32-byte dat
 * `read` – Reads data from a file, respecting file size and bounds
 * `readdir` – Lists files in the root directory of the filesystem
 * `unlink` – Deletes a file
-* `write` – Writes data to a file, supporting overwrites and appends
+* `write` – Writes data to a file, supporting overwrites using `>`, appends using `>>`, and partial writes
 
 ### Extra Credit Features
 * `truncate` – Changes the size of a file
@@ -69,7 +69,7 @@ make unmount_memefs
 
 ## Troubleshooting
 ### Known Issues
-* Undiagnosed crash when user data becomes very long, approaching space limitations.
+* None
 
 ## References
 ### External Resources
