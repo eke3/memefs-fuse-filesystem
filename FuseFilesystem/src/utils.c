@@ -39,7 +39,7 @@ static int from_bcd(uint8_t bcd);
 // Returns: BCD value.
 static uint8_t to_bcd(uint8_t num);
 
-int append_file(const memefs_file_entry_t* file_entry, const char* buf, size_t size) {
+int append_file(memefs_file_entry_t* file_entry, const char* buf, size_t size) {
     uint16_t last_block_index;
     int space_to_write;
     int append_start_index;
@@ -49,6 +49,7 @@ int append_file(const memefs_file_entry_t* file_entry, const char* buf, size_t s
     bool is_first_block;
     int free_fat_blocks;
 
+    // Count free FAT blocks.
     for (i = 0, free_fat_blocks = 0; i < MAX_FAT_ENTRIES; i++) {
         if (main_fat[i] == 0x0000) {
             free_fat_blocks++;
@@ -77,14 +78,15 @@ int append_file(const memefs_file_entry_t* file_entry, const char* buf, size_t s
             space_to_write = ((int)size < BLOCK_SIZE) ? size : BLOCK_SIZE;
         }
 
-        // fill the space in current block        
+        // Fill the space in current block        
         memset(user_data + append_start_index, '\0', space_to_write);
         memcpy(user_data + append_start_index, buf + buffer_offset, space_to_write);
         size -= space_to_write;
         buffer_offset += space_to_write;
+        file_entry->size += space_to_write;
 
         if ((int)size > 0) {
-            // add a new fat block to the chain, updating last_block_index
+            // Add a new fat block to the chain, updating last_block_index
             for (curr_blk_index = 0; curr_blk_index < MAX_FAT_ENTRIES; curr_blk_index++) {
                 if (main_fat[curr_blk_index] == 0x0000) {
                     main_fat[last_block_index] = curr_blk_index;

@@ -417,16 +417,11 @@ static int memefs_write(const char* path, const char* buf, size_t size, off_t of
 
     switch (write_type) {
         case OVERWRITE:
-            fprintf(stderr, "OVERWRITE\n");
-
             if (overwrite_file(&directory[i], buf, size) != 0) {
                 return -ENOSPC;
             }            
             break;
         case APPEND:
-            fprintf(stderr, "APPEND\n");
-            fprintf(stderr, "offset: %jd\n", (intmax_t)offset);
-            
             if (append_file(&directory[i], buf, size) != 0) {
                 return -ENOSPC;
             }
@@ -434,7 +429,6 @@ static int memefs_write(const char* path, const char* buf, size_t size, off_t of
         case INVALID:
             return -ENOENT;
     }
-    directory[i].size += size;
             
     generate_memefs_timestamp(directory[i].bcd_timestamp);
     if (unload_image() != 0) {
