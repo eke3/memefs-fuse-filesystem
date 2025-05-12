@@ -213,7 +213,7 @@ double myCeil(double num) {
         // Number is greater than the whole part.
         return whole_num + 1;
     }
-    
+
     return whole_num;
 }
 
@@ -256,6 +256,7 @@ void name_to_readable(const char* name, char* readable_name) {
 
 int overwrite_file(memefs_file_entry_t* file_entry, const char* buf, size_t size) {
     clear_fat_chain(file_entry);
+    file_entry->size = 0;
     return append_file(file_entry, buf, size);
 }
 

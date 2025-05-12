@@ -205,30 +205,18 @@ static int memefs_read(const char* path, char* buf, size_t size, off_t offset, s
 
     // Adjust size if reading beyond EOF
     size = (size_t)MIN(size, file_size);
-
     bytes_to_read = 0;
     bytes_read = 0;
     buffer_offset = 0;
 
     // Copy data from FAT into buffer.
-    while ((int)size > 0) {
-        if (size > BLOCK_SIZE) {
-            bytes_to_read = BLOCK_SIZE;
-        } else {
-            bytes_to_read = size;
-        }        
-
+    while (((int)size > 0) && (curr_block != 0xFFFF)) {
+        bytes_to_read = MIN(BLOCK_SIZE, size);
         memcpy(buf + buffer_offset, &user_data[curr_block * BLOCK_SIZE], bytes_to_read);
         buffer_offset += bytes_to_read;
         size -= bytes_to_read;
         bytes_read += bytes_to_read;
-        
-        if (main_fat[curr_block] == 0xFFFF) {
-            // End of FAT chain.
-            break;
-        } else {
-            curr_block = main_fat[curr_block];
-        }
+        curr_block = main_fat[curr_block];
     }
 
     return bytes_read;
@@ -429,11 +417,16 @@ static int memefs_write(const char* path, const char* buf, size_t size, off_t of
 
     switch (write_type) {
         case OVERWRITE:
+            fprintf(stderr, "OVERWRITE\n");
+
             if (overwrite_file(&directory[i], buf, size) != 0) {
                 return -ENOSPC;
             }            
             break;
         case APPEND:
+            fprintf(stderr, "APPEND\n");
+            fprintf(stderr, "offset: %jd\n", (intmax_t)offset);
+            
             if (append_file(&directory[i], buf, size) != 0) {
                 return -ENOSPC;
             }

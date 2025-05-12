@@ -1,6 +1,9 @@
 #ifndef DEFINE_H
 #define DEFINE_H
 
+#ifndef MIN
+#define MIN(a, b) (((a) < (b)) ? (a) : (b))
+#endif
 #define BLOCK_SIZE 512
 #define DIRECTORY_BEGIN 240
 #define DIRECTORY_NUM_BLOCKS 14
