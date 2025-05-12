@@ -87,7 +87,7 @@ static int memefs_create(const char* path, mode_t mode, struct fuse_file_info* f
                     // Found free FAT entry.
                     name_to_encoded(path + 1, encoded_filename);
                     memcpy(directory[i].filename, encoded_filename, 11);
-                    directory[i].type_permissions = (uint16_t)(S_IFREG | 0777);
+                    directory[i].type_permissions = (uint16_t)(S_IFREG | 0644);
                     directory[i].start_block = (uint16_t)j;
                     directory[i].unused = (uint16_t)0x00;
                     generate_memefs_timestamp(directory[i].bcd_timestamp);
@@ -143,7 +143,7 @@ static int memefs_getattr(const char* path, struct stat* stbuf, struct fuse_file
         name_to_readable(directory[i].filename, readable_filename);
         if ((strcmp(readable_filename, path + 1) == 0) && (directory[i].type_permissions != 0x0000) && (check_legal_name(readable_filename) == 0)) {
             // Found file.
-            stbuf->st_mode = (mode_t)(S_IFREG | 0777);
+            stbuf->st_mode = (mode_t)(S_IFREG | 0644);
             stbuf->st_nlink = (nlink_t)1;
             stbuf->st_uid = (uid_t)directory[i].uid_owner;
             stbuf->st_gid = (gid_t)directory[i].gid_owner;
@@ -397,8 +397,8 @@ static int memefs_utimens(const char* path, const struct timespec tv[2], struct 
 static int memefs_write(const char* path, const char* buf, size_t size, off_t offset, struct fuse_file_info* fi) {
     (void) fi;
     char readable_filename[MAX_READABLE_FILENAME_LENGTH];
-    write_type_t write_type;
     int i;
+    write_type_t write_type;
 
     write_type = INVALID;
     for (i = 0; i < MAX_FILE_ENTRIES; i++) {

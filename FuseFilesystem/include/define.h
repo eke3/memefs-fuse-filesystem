@@ -1,9 +1,6 @@
 #ifndef DEFINE_H
 #define DEFINE_H
 
-#ifndef MIN
-#define MIN(a, b) (((a) < (b)) ? (a) : (b))
-#endif
 #define BLOCK_SIZE 512
 #define DIRECTORY_BEGIN 240
 #define DIRECTORY_NUM_BLOCKS 14
@@ -15,6 +12,7 @@
 #define MAX_FAT_ENTRIES 256
 #define MAX_FILE_ENTRIES 224
 #define MAX_READABLE_FILENAME_LENGTH 13
+#define MIN(a, b) (((a) < (b)) ? (a) : (b))
 #define SIGNATURE "?MEMEFS++CMSC421"
 #define SUPERBLOCK_BACKUP_BEGIN 0
 #define SUPERBLOCK_MAIN_BEGIN 255

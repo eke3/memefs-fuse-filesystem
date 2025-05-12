@@ -13,12 +13,12 @@ typedef enum write_type {
     INVALID
 } write_type_t;
 
-// int append_file(const memefs_file_entry_t*, const char*, size_t)
+// int append_file(memefs_file_entry_t*, const char*, size_t)
 // Description: Appends data to the end of a file.
 // Preconditions: File exists.
 // Postconditions: Data is appended to the end of the file.
 // Returns: 0 on success, < 0 on failure.
-int append_file(const memefs_file_entry_t* file_entry, const char* buf, size_t size);
+int append_file(memefs_file_entry_t* file_entry, const char* buf, size_t size);
 
 // int check_legal_name(const char*)
 // Description: Checks if a filename is legal.

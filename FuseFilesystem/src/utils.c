@@ -23,7 +23,7 @@ extern uint8_t user_data[USER_DATA_NUM_BLOCKS * BLOCK_SIZE];
 // Preconditions: File entry exists.
 // Postconditions: FAT chain is cleared.
 // Returns: None.
-static void clear_fat_chain(const memefs_file_entry_t* file_entry);
+static void clear_fat_chain(memefs_file_entry_t* file_entry);
 
 // static int from_bcd(uint8_t)
 // Description: Converts a byte from BCD format to decimal.
@@ -39,15 +39,11 @@ static int from_bcd(uint8_t bcd);
 // Returns: BCD value.
 static uint8_t to_bcd(uint8_t num);
 
+#pragma region Implementations
+
 int append_file(memefs_file_entry_t* file_entry, const char* buf, size_t size) {
-    uint16_t last_block_index;
-    int space_to_write;
-    int append_start_index;
-    int curr_blk_index;
-    int i;
+    int i, append_start_index, last_block_index, curr_block_index, space_to_write, free_fat_blocks, is_first_block;
     off_t buffer_offset;
-    bool is_first_block;
-    int free_fat_blocks;
 
     // Count free FAT blocks.
     for (i = 0, free_fat_blocks = 0; i < MAX_FAT_ENTRIES; i++) {
@@ -56,12 +52,12 @@ int append_file(memefs_file_entry_t* file_entry, const char* buf, size_t size) {
         }
     }
 
-    last_block_index = file_entry->start_block;
+    last_block_index = (int)file_entry->start_block;
     while (main_fat[last_block_index] != 0xFFFF) {
         last_block_index = main_fat[last_block_index];
     }
     append_start_index = (last_block_index * BLOCK_SIZE) + (file_entry->size % BLOCK_SIZE);
-    space_to_write = ((int)size < (BLOCK_SIZE - ((int)file_entry->size % BLOCK_SIZE))) ? size : (BLOCK_SIZE - (file_entry->size % BLOCK_SIZE));
+    space_to_write = MIN((int)size, BLOCK_SIZE - ((int)file_entry->size % BLOCK_SIZE));
 
     is_first_block = true;
     buffer_offset = 0;
@@ -75,10 +71,10 @@ int append_file(memefs_file_entry_t* file_entry, const char* buf, size_t size) {
             space_to_write = ((int)size < (BLOCK_SIZE - ((int)file_entry->size % BLOCK_SIZE))) ? size : (BLOCK_SIZE - (file_entry->size % BLOCK_SIZE));
             is_first_block = false;
         } else {
-            space_to_write = ((int)size < BLOCK_SIZE) ? size : BLOCK_SIZE;
+            space_to_write = MIN((int)size, BLOCK_SIZE);
         }
 
-        // Fill the space in current block        
+        // Fill the space in current block.
         memset(user_data + append_start_index, '\0', space_to_write);
         memcpy(user_data + append_start_index, buf + buffer_offset, space_to_write);
         size -= space_to_write;
@@ -86,20 +82,19 @@ int append_file(memefs_file_entry_t* file_entry, const char* buf, size_t size) {
         file_entry->size += space_to_write;
 
         if ((int)size > 0) {
-            // Add a new fat block to the chain, updating last_block_index
-            for (curr_blk_index = 0; curr_blk_index < MAX_FAT_ENTRIES; curr_blk_index++) {
-                if (main_fat[curr_blk_index] == 0x0000) {
-                    main_fat[last_block_index] = curr_blk_index;
-                    backup_fat[last_block_index] = curr_blk_index;
-                    main_fat[curr_blk_index] = 0xFFFF;
-                    backup_fat[curr_blk_index] = 0xFFFF;
-                    last_block_index = curr_blk_index;
+            // Add a new FAT block to the chain, updating last_block_index.
+            for (curr_block_index = 0; curr_block_index < MAX_FAT_ENTRIES; curr_block_index++) {
+                if (main_fat[curr_block_index] == 0x0000) {
+                    main_fat[last_block_index] = curr_block_index;
+                    backup_fat[last_block_index] = curr_block_index;
+                    main_fat[curr_block_index] = 0xFFFF;
+                    backup_fat[curr_block_index] = 0xFFFF;
+                    last_block_index = curr_block_index;
                     free_fat_blocks--;
                     break;
                 }
             }
-
-            // reset append_start_index to (last_block_index * BLOCK_SIZE)
+            // Move append_start_index to next block.
             append_start_index = last_block_index * BLOCK_SIZE;
         }
     }
@@ -159,7 +154,7 @@ int check_legal_name(const char* filename) {
     return 0;
 }
 
-static void clear_fat_chain(const memefs_file_entry_t* file_entry) {
+static void clear_fat_chain(memefs_file_entry_t* file_entry) {
     uint16_t fat_start_index, curr_blk_index, next_blk_index;
 
     fat_start_index = file_entry->start_block;
@@ -170,19 +165,20 @@ static void clear_fat_chain(const memefs_file_entry_t* file_entry) {
     }
     main_fat[fat_start_index] = 0xFFFF;
     backup_fat[fat_start_index] = 0xFFFF;
+    file_entry->size = 0;
 }
 
 static int from_bcd(uint8_t bcd) {
-    // Convert a single BCD byte to a binary integer (e.g., 0x42 -> 42)
-    return ((bcd >> 4) * 10) + (bcd & 0x0F);
+    return (((bcd >> 4) * 10) + (bcd & 0x0F));
 }
 
 void generate_memefs_timestamp(uint8_t bcd_time[8]) {
 	time_t now = time(NULL);
 	struct tm utc;
-	gmtime_r(&now, &utc); // UTC time (MEMEfs uses UTC, not localtime)
+    int full_year;
 
-	int full_year = utc.tm_year + 1900;
+	gmtime_r(&now, &utc); // UTC time (MEMEfs uses UTC, not localtime)
+	full_year = utc.tm_year + 1900;
 	bcd_time[0] = to_bcd(full_year / 100); 	// Century
 	bcd_time[1] = to_bcd(full_year % 100); 	// Year within century
 	bcd_time[2] = to_bcd(utc.tm_mon + 1);  	// Month (0-based in tm)
@@ -258,13 +254,14 @@ void name_to_readable(const char* name, char* readable_name) {
 
 int overwrite_file(memefs_file_entry_t* file_entry, const char* buf, size_t size) {
     clear_fat_chain(file_entry);
-    file_entry->size = 0;
     return append_file(file_entry, buf, size);
 }
 
 static uint8_t to_bcd(uint8_t num) {
-	if (num > 99) return 0xFF;
-	return ((num / 10) << 4) | (num % 10);
+	if (num > 99) {
+        return 0xFF;
+    }
+	return (((num / 10) << 4) | (num % 10));
 }
 
-
+#pragma endregion Implementations

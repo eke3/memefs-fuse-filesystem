@@ -89,7 +89,7 @@ static int load_directory() {
     off_t directory_offset;
     int i;
     
-    // Load directory entries from bottom (253) to top (240)
+    // Load directory entries from bottom (240) to top (253).
     directory_offset = (off_t)(DIRECTORY_BEGIN * BLOCK_SIZE);
     for (i = 0; i < MAX_FILE_ENTRIES; i++) {
         if (pread(img_fd, &directory[i], FILE_ENTRY_SIZE, directory_offset) != FILE_ENTRY_SIZE) {
@@ -98,8 +98,6 @@ static int load_directory() {
         }
         directory_offset += (off_t)FILE_ENTRY_SIZE;
     }
-
-    printf("Successfully loaded directory\n");
 
     return 0;
 }
@@ -128,13 +126,6 @@ static int load_fat() {
         backup_fat[i] = ntohs(backup_fat[i]);
     }
 
-    if (MAX_FAT_ENTRIES > 0) {
-        printf("First entry in main FAT: 0x%04x\n", main_fat[0]);
-        printf("Second entry in main FAT: 0x%04x\n", main_fat[1]);
-    }
-
-
-    printf("Successfully loaded FATs\n");
     return 0;
 }
 
@@ -168,7 +159,6 @@ static int load_superblock() {
         fprintf(stderr, "Invalid filesystem signature from main superblock\n%s\n", main_superblock.signature);
         return -1;
     }
-    fprintf(stderr, "main superblock signature: %s\n", main_superblock.signature);
 
     // Load backup superblock.
     superblock_offset = (off_t)(SUPERBLOCK_BACKUP_BEGIN * BLOCK_SIZE);
@@ -187,7 +177,6 @@ static int load_superblock() {
     memset(backup_superblock.unused, 0x00, sizeof(backup_superblock.unused));
     main_superblock.cleanly_unmounted = 0x00;
     backup_superblock.cleanly_unmounted = 0x00;
-    printf("Successfully loaded superblocks\n");
     return 0;
 }
 
@@ -200,7 +189,6 @@ static int load_user_data() {
         return -1;
     }
 
-    printf("Successfully loaded user data\n");
     return 0;
 }
 
@@ -208,7 +196,7 @@ static int unload_directory() {
     off_t directory_offset;
     int i;
 
-    // Unload directory entries from bottom (253) to top (240)
+    // Unload directory entries from bottom (253) to top (240).
     directory_offset = (off_t)(DIRECTORY_BEGIN * BLOCK_SIZE);
     for (i = 0; i < MAX_FILE_ENTRIES; i++) {
         if (pwrite(img_fd, &directory[i], FILE_ENTRY_SIZE, directory_offset) != FILE_ENTRY_SIZE) {
@@ -218,14 +206,6 @@ static int unload_directory() {
         directory_offset += (off_t)FILE_ENTRY_SIZE;
     }
 
-    // int i;
-    // char readable_filename[MAX_READABLE_FILENAME_LENGTH];
-    // for (i = 0; i < MAX_FILE_ENTRIES; i++) {
-    //     name_to_readable(directory[i].filename, readable_filename);
-    //     printf("File %d: %s\n", i, readable_filename);
-    // }
-
-    // printf("Successfully unloaded directory\n");
     return 0;
 }
 
@@ -259,7 +239,6 @@ static int unload_fat() {
         backup_fat[i] = ntohs(backup_fat[i]);
     }
 
-    printf("Successfully unloaded FAT blocks\n");
     return 0;
 }
 
@@ -287,7 +266,6 @@ static int unload_superblock() {
         return -1;
     }
 
-    printf("Successfully unloaded superblocks\n");
     return 0;
 }
 
@@ -300,7 +278,6 @@ static int unload_user_data() {
         return -1;
     }
 
-    printf("Successfully unloaded user data\n");
     return 0;
 }
 
