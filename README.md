@@ -7,13 +7,13 @@ MEMEfs is a FUSE-based user-space filesystem that stores files using 32-byte dat
 
 ### Supported FUSE Operations
 * `create` – Creates a new file in the filesystem
-* `destroy` – Unloads the file image from memory loses the file image on unmount
-* `getattr` – Retrieves file metadata such as size, permissions, and timestamps
+* `destroy` – Unloads the file image from memory to the filesystem image
+* `getattr` – Retrieves file metadata such as size, permissions, and last modification time
 * `open` – Opens a file and validates its existence
 * `read` – Reads data from a file, respecting file size and bounds
 * `readdir` – Lists files in the root directory of the filesystem
 * `unlink` – Deletes a file
-* `write` – Writes data to a file, supporting overwrites using `>`, appends using `>>`, and partial writes
+* `write` – Writes data to a file, supporting overwrites, appends, and partial writes
 
 ### Extra Credit Features
 * `truncate` – Changes the size of a file
@@ -63,7 +63,7 @@ make unmount_memefs
 * Create files using `touch` and verify with `ls`
 * Write data using `echo >` and read with `cat` to confirm contents
 * Append data using `echo >>` and verify the full contents
-* Delete files with rm and ensure they are removed from directory listings
+* Delete files using `rm` and ensure they are removed from directory listings
 * Use internal logging to monitor operation success and failures
 * Use the provided bash script `memefs_debugger.sh` to inspect raw disk image data for consistency.
 
