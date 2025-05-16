@@ -1,4 +1,4 @@
-# CMSC 421 Project 4
+# Memefs FUSE Filesystem
 
 ## Introduction
 **Platforms** - Linux
@@ -14,14 +14,11 @@ MEMEfs is a FUSE-based user-space filesystem that stores files using 32-byte dat
 * `readdir` – Lists files in the root directory of the filesystem
 * `unlink` – Deletes a file
 * `write` – Writes data to a file, supporting overwrites, appends, and partial writes
-
-### Extra Credit Features
 * `truncate` – Changes the size of a file
 
 
 ## Contact
 * **Contributor** - Eric Ekey
-* **Student ID** - XR06051
 * **Email** - eekey1@umbc.edu
 
 
