@@ -15,12 +15,7 @@ MEMEfs is a FUSE-based user-space filesystem that stores files using 32-byte dat
 * `unlink` – Deletes a file
 * `write` – Writes data to a file, supporting overwrites, appends, and partial writes
 * `truncate` – Changes the size of a file
-
-
-## Contact
-* **Contributor** - Eric Ekey
-* **Email** - eekey1@umbc.edu
-
+  
 
 ## Installation and Setup
 ### Setup
